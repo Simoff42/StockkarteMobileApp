@@ -36,6 +36,21 @@ class NativeLibrary {
     'add_one',
   );
   late final _add_one = _add_onePtr.asFunction<void Function()>();
+
+  bool login(ffi.Pointer<ffi.Char> username, ffi.Pointer<ffi.Char> password) {
+    return _login(username, password);
+  }
+
+  late final _loginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Bool Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)
+        >
+      >('login');
+  late final _login = _loginPtr
+      .asFunction<
+        bool Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)
+      >();
 }
 
 typedef __u_char = ffi.UnsignedChar;
@@ -417,3 +432,9 @@ const int WCHAR_MAX = 2147483647;
 const int WINT_MIN = 0;
 
 const int WINT_MAX = 4294967295;
+
+const int __bool_true_false_are_defined = 1;
+
+const int true$ = 1;
+
+const int false$ = 0;

@@ -7,16 +7,23 @@ import 'package:ffi/ffi.dart';
 import 'dart:ffi' as ffi;
 import '../cppasync.dart';
 import 'dart:isolate';
+import 'dart:convert';
 
-//function to transform strings to send strings to the backend
 ffi.Pointer<ffi.Char> stringToNative(String str) {
   final nativeStr = str.toNativeUtf8();
   return nativeStr.cast<ffi.Char>();
 }
 
-//function to transform strings from the backend to strings
 String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  return nativeStr.cast<Utf8>().toDartString();
+  if (nativeStr == ffi.nullptr) return '';
+
+  int length = 0;
+  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
+  while (uint8Pointer.elementAt(length).value != 0) {
+    length++;
+  }
+  final bytes = uint8Pointer.asTypedList(length);
+  return utf8.decode(bytes, allowMalformed: true);
 }
 
 class LoginScreen extends StatefulWidget {
@@ -26,29 +33,22 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-Future<bool> attemptLoginInIsolate(String username, String password) async {
+Future<String> attemptLoginInIsolate(String username, String password) async {
   return await Isolate.run(() {
-    // 1. Initialize the C++ library INSIDE the background thread
     final dylib = ffi.DynamicLibrary.open('libnative_backend.so');
-    // final backend = NativeLibrary(dylib);
 
-    // 2. Do the pointer math here
-    // (You can use your stringToNative function if it is also top-level,
-    // but doing it inline here guarantees zero capture issues)
     final cUsername = username.toNativeUtf8();
     final cPassword = password.toNativeUtf8();
 
-    // 3. Call C++
     final result = backend.login(
       cUsername.cast<ffi.Char>(),
       cPassword.cast<ffi.Char>(),
     );
 
-    // 4. Free the memory
     calloc.free(cUsername);
     calloc.free(cPassword);
 
-    return result;
+    return nativeToString(result);
   });
 }
 
@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.lock_outline, size: 80, color: Colors.green),
+              const Icon(Icons.lock_outline, size: 80),
               const SizedBox(height: 32),
               Text(
                 'Welcome Back',
@@ -109,10 +109,15 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(
                 width: double.infinity,
                 height: 50,
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : FilledButton(
-                        onPressed: () async {
+                child: FilledButton(
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.all<Color>(
+                      Theme.of(context).colorScheme.tertiary,
+                    ),
+                  ),
+                  onPressed: _isLoading
+                      ? null
+                      : () async {
                           HapticFeedback.heavyImpact();
                           final username = usernameController.text;
                           final password = passwordController.text;
@@ -128,7 +133,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           setState(() {
                             _isLoading = false;
                           });
-                          if (loginSuccess) {
+
+                          debugPrint('Login response: $loginSuccess');
+                          if (loginSuccess == "SUCCESS") {
                             context.go('/home');
                             if (await Vibration.hasCustomVibrationsSupport() ??
                                 false) {
@@ -137,15 +144,30 @@ class _LoginScreenState extends State<LoginScreen> {
                               Vibration.vibrate();
                             }
                           } else {
-                            // vibrate the device to provide haptic feedback on failed login
-
                             showDialog(
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: const Text('Login Failed'),
-                                content: const Text(
-                                  'Invalid username or password. Please try again.',
-                                ),
+                                content: Text(switch (loginSuccess) {
+                                  "FAILED" => "Invalid username or password.",
+                                  "TIMEOUT" =>
+                                    "The server took too long to respond. Please try again.",
+                                  "NETWORK_ERROR" =>
+                                    "Could not connect to the server. Please check your internet connection.",
+                                  "BAD_REQUEST" =>
+                                    "The server rejected the request. Please contact support.",
+                                  "INTERNAL_SERVER_ERROR" =>
+                                    "The server encountered an error. Please try again later.",
+                                  "HTTP_ERROR" =>
+                                    "An unexpected HTTP error occurred. Please try again.",
+                                  "UNAUTHORIZED" =>
+                                    "You are not authorized to perform this action.",
+                                  "NOT_FOUND" =>
+                                    "The requested resource was not found on the server.",
+                                  "ERROR" =>
+                                    "An unknown error occurred on the server. Please try again.",
+                                  _ => "An unknown error occurred.",
+                                }),
                                 actions: [
                                   TextButton(
                                     onPressed: () =>
@@ -165,11 +187,17 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                           }
                         },
-                        child: const Text(
-                          'Login',
-                          style: TextStyle(fontSize: 18),
-                        ),
-                      ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.black,
+                          ),
+                        )
+                      : const Text('Login', style: TextStyle(fontSize: 18)),
+                ),
               ),
             ],
           ),

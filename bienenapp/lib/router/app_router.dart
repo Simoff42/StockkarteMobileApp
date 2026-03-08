@@ -10,7 +10,7 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/home',
       builder: (context, state) =>
-          const HomeScreen(title: 'Flutter Demo Home Page'),
+          const HomeScreen(title: 'Your Hive Overview'),
     ),
   ],
 );

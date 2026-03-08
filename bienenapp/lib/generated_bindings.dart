@@ -37,20 +37,49 @@ class NativeLibrary {
   );
   late final _add_one = _add_onePtr.asFunction<void Function()>();
 
-  bool login(ffi.Pointer<ffi.Char> username, ffi.Pointer<ffi.Char> password) {
+  ffi.Pointer<ffi.Char> login(
+    ffi.Pointer<ffi.Char> username,
+    ffi.Pointer<ffi.Char> password,
+  ) {
     return _login(username, password);
   }
 
   late final _loginPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Bool Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
         >
       >('login');
   late final _login = _loginPtr
       .asFunction<
-        bool Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+        )
       >();
+
+  ffi.Pointer<ffi.Char> logout() {
+    return _logout();
+  }
+
+  late final _logoutPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>('logout');
+  late final _logout = _logoutPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function()>();
+
+  ffi.Pointer<ffi.Char> load_hives_overview() {
+    return _load_hives_overview();
+  }
+
+  late final _load_hives_overviewPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>(
+        'load_hives_overview',
+      );
+  late final _load_hives_overview = _load_hives_overviewPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function()>();
 }
 
 typedef __u_char = ffi.UnsignedChar;

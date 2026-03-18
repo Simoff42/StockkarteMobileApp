@@ -38,7 +38,8 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         // Instantiate the client inside the thread. 
         // This ensures that if the main thread times out and returns early, 
         // the background thread still safely owns the client memory and won't crash.
-        httplib::Client cli("192.168.1.140", 8080);
+        // httplib::Client cli("192.168.1.140", 8080);
+        httplib::Client cli("10.5.177.29", 8080);
         
         cli.set_address_family(AF_INET);
         cli.set_keep_alive(false);
@@ -46,7 +47,7 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         cli.set_read_timeout(5, 0);
         cli.set_write_timeout(5, 0);
         
-        LOGI("HTTP client initialized inside async worker with base URL: http://192.168.2x.140:8080");
+        LOGI("HTTP client initialized inside async worker with base URL: http://10.5.48.95 :8080");
         
         // This is the blocking call that might hang infinitely
         return cli.Post(url.c_str(), body, "application/json"); });
@@ -169,6 +170,10 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
 }
 
 // Homescreen overview of hives for the logged in user
+
+// Globals
+json HIVES_OVERVIEW;
+
 extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *load_hives_overview()
 {
     std::string body = "{\"sessionId\": \"" + SESSION_ID + "\"}";
@@ -186,5 +191,43 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
         HIVES_OVERVIEW = parse_response_body(response.body);
 
         return strdup(response.status.c_str());
+    }
+}
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *get_hives_overview_json()
+{
+    std::string body = "{\"sessionId\": \"" + SESSION_ID + "\"}";
+    HttpResponse response = post_request("/getUserHivesOverview/", body);
+    LOGI("Hives overview response: %s", response.body.c_str());
+
+    if (response.status != "SUCCESS")
+    {
+        LOGE("Failed to load hives overview with status: %s", response.body.c_str());
+        return strdup(response.body.c_str());
+    }
+    else
+    {
+        // save to a global variable for later use in hive details screen
+        HIVES_OVERVIEW = parse_response_body(response.body);
+    }
+    std::string overview_str = HIVES_OVERVIEW.dump();
+    LOGI("Returning hives overview JSON: %s", overview_str.c_str());
+    return strdup(overview_str.c_str());
+}
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *get_hive_details_json(int hive_id)
+{
+    std::string body = "{\"sessionId\": \"" + SESSION_ID + "\", \"hiveId\": " + std::to_string(hive_id) + "}";
+    HttpResponse response = post_request("/getHiveDetails/", body);
+    LOGI("Hive details response: %s", response.body.c_str());
+
+    if (response.status != "SUCCESS")
+    {
+        LOGE("Failed to load hive details with status: %s", response.body.c_str());
+        return strdup(response.body.c_str());
+    }
+    else
+    {
+        return strdup(response.body.c_str());
     }
 }

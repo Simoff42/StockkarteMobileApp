@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:vibration/vibration.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/native_backend.dart';
 import 'package:ffi/ffi.dart';
 import 'dart:ffi' as ffi;
@@ -55,13 +57,20 @@ Future<String> attemptLoginInIsolate(String username, String password) async {
 class _LoginScreenState extends State<LoginScreen> {
   late TextEditingController usernameController;
   late TextEditingController passwordController;
+
   bool _isLoading = false;
+  bool _canUseBiometrics = false;
+
+  // Initialize Biometrics & Secure Storage
+  final LocalAuthentication _localAuth = LocalAuthentication();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   @override
   void initState() {
     super.initState();
     usernameController = TextEditingController();
     passwordController = TextEditingController();
+    _checkBiometricsAndSavedCredentials();
   }
 
   @override
@@ -71,11 +80,136 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Checks if the device has fingerprint available AND if we have saved credentials
+  Future<void> _checkBiometricsAndSavedCredentials() async {
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      final isSupported = await _localAuth.isDeviceSupported();
+
+      // Check if we previously saved a login state
+      final hasUsername = await _secureStorage.containsKey(
+        key: 'saved_username',
+      );
+      final hasPassword = await _secureStorage.containsKey(
+        key: 'saved_password',
+      );
+
+      if (mounted) {
+        setState(() {
+          _canUseBiometrics =
+              canCheck && isSupported && hasUsername && hasPassword;
+        });
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Error checking biometrics: $e");
+    }
+  }
+
+  /// Triggered when the user presses the Fingerprint button
+  Future<void> _attemptBiometricLogin() async {
+    try {
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Scan your fingerprint to log in',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+
+      if (authenticated) {
+        setState(() => _isLoading = true);
+        HapticFeedback.heavyImpact();
+
+        // Retrieve credentials from Android Keystore / iOS Keychain
+        final username = await _secureStorage.read(key: 'saved_username');
+        final password = await _secureStorage.read(key: 'saved_password');
+
+        if (username != null && password != null) {
+          final loginSuccess = await attemptLoginInIsolate(username, password);
+          if (mounted) {
+            setState(() => _isLoading = false);
+            await _handleLoginResult(loginSuccess, username, password);
+          }
+        } else {
+          setState(() => _isLoading = false);
+        }
+      }
+    } on PlatformException catch (e) {
+      debugPrint("Biometric auth error: $e");
+    }
+  }
+
+  /// Helper method to handle routing and error dialogs for both manual and biometric logins
+  Future<void> _handleLoginResult(
+    String loginSuccess,
+    String username,
+    String password,
+  ) async {
+    debugPrint('Login response: $loginSuccess');
+
+    if (loginSuccess == "SUCCESS") {
+      // SAVE credentials securely for future biometric logins
+      await _secureStorage.write(key: 'saved_username', value: username);
+      await _secureStorage.write(key: 'saved_password', value: password);
+
+      if (mounted) context.go('/home');
+
+      if (await Vibration.hasCustomVibrationsSupport() ?? false) {
+        Vibration.vibrate(pattern: [0, 20, 50]);
+      } else {
+        Vibration.vibrate();
+      }
+    } else {
+      // If login fails, clear any saved secure credentials to be safe
+      await _secureStorage.delete(key: 'saved_username');
+      await _secureStorage.delete(key: 'saved_password');
+      setState(() => _canUseBiometrics = false);
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Login Failed'),
+          content: Text(switch (loginSuccess) {
+            "FAILED" => "Invalid username or password.",
+            "TIMEOUT" =>
+              "The server took too long to respond. Please try again.",
+            "NETWORK_ERROR" =>
+              "Could not connect to the server. Please check your internet connection.",
+            "BAD_REQUEST" =>
+              "The server rejected the request. Please contact support.",
+            "INTERNAL_SERVER_ERROR" =>
+              "The server encountered an error. Please try again later.",
+            "HTTP_ERROR" =>
+              "An unexpected HTTP error occurred. Please try again.",
+            "UNAUTHORIZED" => "You are not authorized to perform this action.",
+            "NOT_FOUND" =>
+              "The requested resource was not found on the server.",
+            "ERROR" =>
+              "An unknown error occurred on the server. Please try again.",
+            _ => "An unknown error occurred.",
+          }),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (await Vibration.hasCustomVibrationsSupport() ?? false) {
+        Vibration.vibrate(pattern: [0, 100, 50, 100, 50, 100, 50]);
+      } else {
+        Vibration.vibrate();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -122,70 +256,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           final username = usernameController.text;
                           final password = passwordController.text;
 
-                          setState(() {
-                            _isLoading = true;
-                          });
+                          setState(() => _isLoading = true);
 
                           final loginSuccess = await attemptLoginInIsolate(
                             username,
                             password,
                           );
-                          setState(() {
-                            _isLoading = false;
-                          });
 
-                          debugPrint('Login response: $loginSuccess');
-                          if (loginSuccess == "SUCCESS") {
-                            context.go('/home');
-                            if (await Vibration.hasCustomVibrationsSupport() ??
-                                false) {
-                              Vibration.vibrate(pattern: [0, 20, 50]);
-                            } else {
-                              Vibration.vibrate();
-                            }
-                          } else {
-                            showDialog(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Login Failed'),
-                                content: Text(switch (loginSuccess) {
-                                  "FAILED" => "Invalid username or password.",
-                                  "TIMEOUT" =>
-                                    "The server took too long to respond. Please try again.",
-                                  "NETWORK_ERROR" =>
-                                    "Could not connect to the server. Please check your internet connection.",
-                                  "BAD_REQUEST" =>
-                                    "The server rejected the request. Please contact support.",
-                                  "INTERNAL_SERVER_ERROR" =>
-                                    "The server encountered an error. Please try again later.",
-                                  "HTTP_ERROR" =>
-                                    "An unexpected HTTP error occurred. Please try again.",
-                                  "UNAUTHORIZED" =>
-                                    "You are not authorized to perform this action.",
-                                  "NOT_FOUND" =>
-                                    "The requested resource was not found on the server.",
-                                  "ERROR" =>
-                                    "An unknown error occurred on the server. Please try again.",
-                                  _ => "An unknown error occurred.",
-                                }),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(),
-                                    child: const Text('OK'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (await Vibration.hasCustomVibrationsSupport() ??
-                                false) {
-                              Vibration.vibrate(
-                                pattern: [0, 100, 50, 100, 50, 100, 50],
-                              );
-                            } else {
-                              Vibration.vibrate();
-                            }
-                          }
+                          setState(() => _isLoading = false);
+
+                          // Handle login result using the helper method
+                          await _handleLoginResult(
+                            loginSuccess,
+                            username,
+                            password,
+                          );
                         },
                   child: _isLoading
                       ? const SizedBox(
@@ -199,6 +284,25 @@ class _LoginScreenState extends State<LoginScreen> {
                       : const Text('Login', style: TextStyle(fontSize: 18)),
                 ),
               ),
+
+              // Only show the biometric button if available and credentials exist
+              if (_canUseBiometrics) ...[
+                const SizedBox(height: 24),
+                TextButton.icon(
+                  onPressed: _isLoading ? null : _attemptBiometricLogin,
+                  icon: const Icon(Icons.fingerprint, size: 36),
+                  label: const Text(
+                    'Login with Fingerprint',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 24,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

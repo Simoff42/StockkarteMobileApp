@@ -5,6 +5,25 @@ void main() {
   runApp(const MyApp());
 }
 
+class MarkingColors extends ThemeExtension<MarkingColors> {
+  final List<Color> colors;
+
+  const MarkingColors({required this.colors});
+
+  @override
+  ThemeExtension<MarkingColors> copyWith({List<Color>? colors}) {
+    return MarkingColors(colors: colors ?? this.colors);
+  }
+
+  @override
+  ThemeExtension<MarkingColors> lerp(
+    ThemeExtension<MarkingColors>? other,
+    double t,
+  ) {
+    return this;
+  }
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -23,23 +42,31 @@ class MyApp extends StatelessWidget {
           seedColor: _amberSeed,
           brightness: Brightness.light,
           // Overriding specific colors for a tailored Light Theme
-          primary: const Color(
-            0xFFD49A00,
-          ), // Slightly deeper amber for better accessibility/contrast
-          onPrimary: Colors.white, // White text/icons on primary buttons
-          secondary: const Color(
-            0xFF006A60,
-          ), // Complementary deep teal for secondary accents
+          primary: const Color.fromARGB(255, 220, 171, 38),
+          onPrimary: Colors.white,
+          secondary: const Color(0xFF006A60),
           onSecondary: Colors.white,
-          tertiary: const Color(
-            0xFF605E41,
-          ), // Earthy olive/grey for subtle tertiary elements
-          surface: const Color(
-            0xFFFFFBFA,
-          ), // Very warm, off-white surface color
+          tertiary: const Color.fromARGB(255, 0, 0, 0),
+          surface: const Color(0xFFFFFBFA),
+          surfaceContainer: const Color.fromARGB(255, 231, 231, 231),
         ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
+        // Marking colors for list item differentiation
+        extensions: const [
+          MarkingColors(
+            colors: [
+              Color(0xFFE91E63), // Pink
+              Color(0xFF2196F3), // Blue
+              Color(0xFF4CAF50), // Green
+              Color(0xFFFFC107), // Amber
+              Color(0xFF9C27B0), // Purple
+              Color(0xFF00BCD4), // Cyan
+              Color(0xFFFF5722), // Deep Orange
+              Color(0xFF795548), // Brown
+            ],
+          ),
+        ],
       ),
 
       // --- DARK THEME ---
@@ -47,32 +74,31 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: _amberSeed,
           brightness: Brightness.dark,
-          // Overriding specific colors for a tailored Dark Theme
-          primary: const Color.fromARGB(
-            255,
-            255,
-            183,
-            0,
-          ), // Brighter, softer amber so it glows in dark mode
-          onPrimary: const Color(
-            0xFF402D00,
-          ), // Dark brown text on amber buttons for readability
-          secondary: const Color(
-            0xFF53D5C3,
-          ), // Bright minty-teal for dark mode accents
+          primary: const Color.fromARGB(255, 255, 183, 0),
+          onPrimary: const Color(0xFF402D00),
+          secondary: const Color(0xFF53D5C3),
           onSecondary: const Color(0xFF003731),
-          tertiary: const Color.fromARGB(
-            255,
-            255,
-            255,
-            255,
-          ), // Soft, light olive for tertiary elements
-          surface: const Color(
-            0xFF1E1B16,
-          ), // Warm dark grey (looks much better than pure black)
+          tertiary: const Color.fromARGB(255, 255, 255, 255),
+          surface: const Color(0xFF1E1B16),
+          surfaceContainer: const Color.fromARGB(255, 57, 52, 45),
         ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
+        // Marking colors for list item differentiation
+        extensions: const [
+          MarkingColors(
+            colors: [
+              Color(0xFF64B5F6), // Light Blue
+              Color(0xFFBA68C8), // Light Purple
+              Color(0xFF81C784), // Light Green
+              Color(0xFFFFD54F), // Light Amber
+              Color(0xFF4DD0E1), // Light Cyan
+              Color(0xFFFF8A65), // Light Orange
+              Color(0xFFA1887F), // Light Brown
+              Color(0xFFFF6B9D), // Light Pink
+            ],
+          ),
+        ],
       ),
 
       themeMode: ThemeMode.system,

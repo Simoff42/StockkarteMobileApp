@@ -29,7 +29,7 @@ std::string handle_get_user_hives_overview(const crow::request &req)
         try
         {
 
-            soci::rowset<soci::row> rs = (sql.prepare << "SELECT id, name, place, hivenumber, coworker_table FROM masterhives");
+            soci::rowset<soci::row> rs = (sql.prepare << "SELECT id, name, place, hivenumber, coworker_table, coordinates FROM masterhives");
 
             for (soci::rowset<soci::row>::const_iterator it = rs.begin(); it != rs.end(); ++it)
             {
@@ -39,18 +39,19 @@ std::string handle_get_user_hives_overview(const crow::request &req)
                 std::string h_location = row.get<std::string>(2, "");
                 std::string h_hivenumber = row.get<std::string>(3, "");
                 std::string coworker_table = row.get<std::string>(4, "");
+                std::string h_coordinates = row.get<std::string>(5, "");
 
                 if (coworker_table.empty())
                 {
                     continue;
                 }
-
                 int is_coworker = 0;
-                std::string check_query = "SELECT COUNT(*) FROM " + coworker_table + " WHERE id = :user_id";
+                std::string permission;
+                std::string check_query = "SELECT COUNT(*), permission FROM " + coworker_table + " WHERE id = :user_id";
 
                 try
                 {
-                    sql << check_query, soci::into(is_coworker), soci::use(user_id);
+                    sql << check_query, soci::into(is_coworker), soci::into(permission), soci::use(user_id);
 
                     if (is_coworker > 0)
                     {
@@ -59,6 +60,8 @@ std::string handle_get_user_hives_overview(const crow::request &req)
                         hive_obj["name"] = h_name;
                         hive_obj["location"] = h_location;
                         hive_obj["hivenumber"] = h_hivenumber;
+                        hive_obj["permission"] = permission;
+                        hive_obj["coordinates"] = h_coordinates;
 
                         hive_list.push_back(std::move(hive_obj));
                     }

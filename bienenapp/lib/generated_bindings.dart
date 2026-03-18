@@ -70,16 +70,27 @@ class NativeLibrary {
   late final _logout = _logoutPtr
       .asFunction<ffi.Pointer<ffi.Char> Function()>();
 
-  ffi.Pointer<ffi.Char> load_hives_overview() {
-    return _load_hives_overview();
+  ffi.Pointer<ffi.Char> get_hives_overview_json() {
+    return _get_hives_overview_json();
   }
 
-  late final _load_hives_overviewPtr =
+  late final _get_hives_overview_jsonPtr =
       _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>(
-        'load_hives_overview',
+        'get_hives_overview_json',
       );
-  late final _load_hives_overview = _load_hives_overviewPtr
+  late final _get_hives_overview_json = _get_hives_overview_jsonPtr
       .asFunction<ffi.Pointer<ffi.Char> Function()>();
+
+  ffi.Pointer<ffi.Char> get_hive_details_json(int hive_id) {
+    return _get_hive_details_json(hive_id);
+  }
+
+  late final _get_hive_details_jsonPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function(ffi.Int)>>(
+        'get_hive_details_json',
+      );
+  late final _get_hive_details_json = _get_hive_details_jsonPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function(int)>();
 }
 
 typedef __u_char = ffi.UnsignedChar;
@@ -461,9 +472,3 @@ const int WCHAR_MAX = 2147483647;
 const int WINT_MIN = 0;
 
 const int WINT_MAX = 4294967295;
-
-const int __bool_true_false_are_defined = 1;
-
-const int true$ = 1;
-
-const int false$ = 0;

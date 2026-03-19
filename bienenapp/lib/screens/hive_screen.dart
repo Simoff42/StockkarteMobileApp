@@ -44,6 +44,31 @@ Future<String> fetchHiveDetailsInIsolate(int id) async {
   });
 }
 
+class _ThemeRefreshIndicator extends StatelessWidget {
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  const _ThemeRefreshIndicator({
+    super.key,
+    required this.onRefresh,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      color: Theme.of(context).colorScheme.primary,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      strokeWidth: 3.0,
+      onRefresh: () async {
+        HapticFeedback.mediumImpact();
+        await onRefresh();
+      },
+      child: child,
+    );
+  }
+}
+
 class HiveScreen extends StatefulWidget {
   final String id;
 
@@ -286,10 +311,21 @@ class _HiveScreenState extends State<HiveScreen> {
 
   Widget _buildInfoTab() {
     if (_hiveDetails == null || _hiveDetails!.isEmpty) {
-      return Center(
-        child: Text(
-          'Could not load details for Hive ${widget.id}',
-          style: Theme.of(context).textTheme.titleMedium,
+      return _ThemeRefreshIndicator(
+        onRefresh: _loadHiveDetails,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Center(
+                child: Text(
+                  'Could not load details for Hive ${widget.id}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -353,227 +389,232 @@ class _HiveScreenState extends State<HiveScreen> {
             ? '${coords.latitude.toStringAsFixed(4)}, ${coords.longitude.toStringAsFixed(4)}'
             : 'N/A';
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            children: [
-              _buildInfoCard(
-                title: 'Name',
-                icon: Icons.hexagon_outlined,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Name', valName),
-                content: Text(
-                  valName,
-                  style: Theme.of(context).textTheme.titleMedium,
+        return _ThemeRefreshIndicator(
+          onRefresh: _loadHiveDetails,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                _buildInfoCard(
+                  title: 'Name',
+                  icon: Icons.hexagon_outlined,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Name', valName),
+                  content: Text(
+                    valName,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Hive Number',
-                icon: Icons.numbers,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Hive Number', valHiveNum),
-                content: Text(
-                  valHiveNum,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Hive Number',
+                  icon: Icons.numbers,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Hive Number', valHiveNum),
+                  content: Text(
+                    valHiveNum,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Street',
-                icon: Icons.signpost_outlined,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Street', valStreet),
-                content: Text(
-                  valStreet,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Street',
+                  icon: Icons.signpost_outlined,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Street', valStreet),
+                  content: Text(
+                    valStreet,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Place',
-                icon: Icons.location_on_outlined,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Place', valLocation),
-                content: Text(
-                  valLocation,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Place',
+                  icon: Icons.location_on_outlined,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Place', valLocation),
+                  content: Text(
+                    valLocation,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Map & Coordinates',
-                icon: Icons.map_outlined,
-                width: fullWidth,
-                onTap: () async {
-                  if (coords != null) {
-                    final url = Uri.parse(
-                      'https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}',
-                    );
-                    try {
-                      final launched = await launchUrl(
-                        url,
-                        mode: LaunchMode.externalApplication,
+                _buildInfoCard(
+                  title: 'Map & Coordinates',
+                  icon: Icons.map_outlined,
+                  width: fullWidth,
+                  onTap: () async {
+                    if (coords != null) {
+                      final url = Uri.parse(
+                        'https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}',
                       );
-                      if (!launched) {
-                        final fallbackLaunched = await launchUrl(
+                      try {
+                        final launched = await launchUrl(
                           url,
-                          mode: LaunchMode.platformDefault,
+                          mode: LaunchMode.externalApplication,
                         );
-                        if (!fallbackLaunched) {
-                          _copyToClipboard('Coordinates', coordsText);
+                        if (!launched) {
+                          final fallbackLaunched = await launchUrl(
+                            url,
+                            mode: LaunchMode.platformDefault,
+                          );
+                          if (!fallbackLaunched) {
+                            _copyToClipboard('Coordinates', coordsText);
+                          }
                         }
+                      } catch (e) {
+                        _copyToClipboard('Coordinates', coordsText);
                       }
-                    } catch (e) {
+                    } else {
                       _copyToClipboard('Coordinates', coordsText);
                     }
-                  } else {
-                    _copyToClipboard('Coordinates', coordsText);
-                  }
-                },
-                content: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (coords != null) ...[
-                      IgnorePointer(
-                        child: Container(
-                          height: 150,
-                          clipBehavior: Clip.antiAlias,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
+                  },
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (coords != null) ...[
+                        IgnorePointer(
+                          child: Container(
+                            height: 150,
+                            clipBehavior: Clip.antiAlias,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.outlineVariant,
+                              ),
+                            ),
+                            child: FlutterMap(
+                              options: MapOptions(
+                                initialCenter: coords,
+                                initialZoom: 15.0,
+                                interactionOptions: const InteractionOptions(
+                                  flags: InteractiveFlag.none,
+                                ),
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate:
+                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName: 'com.example.hivesapp',
+                                ),
+                                MarkerLayer(
+                                  markers: [
+                                    Marker(
+                                      point: coords,
+                                      width: 40,
+                                      height: 40,
+                                      alignment: Alignment.topCenter,
+                                      child: Icon(
+                                        Icons.location_on,
+                                        color: Colors.blue.shade600,
+                                        size: 40,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
-                          child: FlutterMap(
-                            options: MapOptions(
-                              initialCenter: coords,
-                              initialZoom: 15.0,
-                              interactionOptions: const InteractionOptions(
-                                flags: InteractiveFlag.none,
-                              ),
-                            ),
-                            children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName: 'com.example.hivesapp',
-                              ),
-                              MarkerLayer(
-                                markers: [
-                                  Marker(
-                                    point: coords,
-                                    width: 40,
-                                    height: 40,
-                                    alignment: Alignment.topCenter,
-                                    child: Icon(
-                                      Icons.location_on,
-                                      color: Colors.blue.shade600,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: Text(
+                            coordsText,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  fontFamily: 'monospace',
+                                  letterSpacing: 1.2,
+                                ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
                     ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Center(
-                        child: Text(
-                          coordsText,
+                  ),
+                ),
+                _buildInfoCard(
+                  title: 'Your Permission',
+                  icon: Icons.security_outlined,
+                  width: thirdWidth,
+                  onTap: () => _copyToClipboard('Permission Level', permLabel),
+                  content: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: permBg,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(permIcon, size: 16, color: permColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          permLabel,
                           style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
-                                fontFamily: 'monospace',
-                                letterSpacing: 1.2,
+                                color: permColor,
+                                fontWeight: FontWeight.w600,
                               ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-              _buildInfoCard(
-                title: 'Your Permission',
-                icon: Icons.security_outlined,
-                width: thirdWidth,
-                onTap: () => _copyToClipboard('Permission Level', permLabel),
-                content: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: permBg,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(permIcon, size: 16, color: permColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        permLabel,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: permColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Owner',
-                icon: Icons.person_outline,
-                width: thirdWidth,
-                onTap: () => _copyToClipboard('Owner', valOwner),
-                content: Text(
-                  valOwner,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Owner',
+                  icon: Icons.person_outline,
+                  width: thirdWidth,
+                  onTap: () => _copyToClipboard('Owner', valOwner),
+                  content: Text(
+                    valOwner,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Creation Date',
-                icon: Icons.calendar_today_outlined,
-                width: thirdWidth,
-                onTap: () => _copyToClipboard('Creation Date', valDate),
-                content: Text(
-                  valDate,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Creation Date',
+                  icon: Icons.calendar_today_outlined,
+                  width: thirdWidth,
+                  onTap: () => _copyToClipboard('Creation Date', valDate),
+                  content: Text(
+                    valDate,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Veterinarian',
-                icon: Icons.medical_services_outlined,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Veterinarian', valVet),
-                content: Text(
-                  valVet,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Veterinarian',
+                  icon: Icons.medical_services_outlined,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Veterinarian', valVet),
+                  content: Text(
+                    valVet,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              _buildInfoCard(
-                title: 'Inspector',
-                icon: Icons.assignment_ind_outlined,
-                width: pairedWidth,
-                onTap: () => _copyToClipboard('Inspector', valInspector),
-                content: Text(
-                  valInspector,
-                  style: Theme.of(context).textTheme.titleMedium,
+                _buildInfoCard(
+                  title: 'Inspector',
+                  icon: Icons.assignment_ind_outlined,
+                  width: pairedWidth,
+                  onTap: () => _copyToClipboard('Inspector', valInspector),
+                  content: Text(
+                    valInspector,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -588,7 +629,15 @@ class _HiveScreenState extends State<HiveScreen> {
     final String volkId = volk['id']?.toString() ?? '';
     final String nummer = volk['nummer']?.toString() ?? 'N/A';
     final String konigin = volk['konigin']?.toString() ?? 'unmarkiert';
-    final String datum = volk['datum']?.toString() ?? 'N/A';
+    String datum = volk['datum']?.toString() ?? 'N/A';
+
+    if (datum != 'N/A') {
+      if (datum.contains(' ')) {
+        datum = datum.split(' ')[0];
+      } else if (datum.contains('T')) {
+        datum = datum.split('T')[0];
+      }
+    }
 
     Color qColor = Colors.grey.shade300;
     Color qTextColor = Colors.black87;
@@ -771,22 +820,31 @@ class _HiveScreenState extends State<HiveScreen> {
     }
 
     if (volksList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return _ThemeRefreshIndicator(
+        onRefresh: _loadHiveDetails,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(
-              Icons.hive_outlined,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Volks recorded yet',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.hive_outlined,
+                    size: 64,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No Volks recorded yet',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -843,73 +901,80 @@ class _HiveScreenState extends State<HiveScreen> {
             ? (fullWidth - (spacing * 2)) / 3
             : (isMedium ? (fullWidth - spacing) / 2 : fullWidth);
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (activeVolks.isNotEmpty)
-                Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: activeVolks
-                      .map(
-                        (v) => _buildVolkTile(
-                          v as Map<String, dynamic>,
-                          tileWidth,
-                          context,
-                        ),
-                      )
-                      .toList(),
-                ),
-
-              if (activeVolks.isEmpty && inactiveVolks.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    'No active Volks.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+        return _ThemeRefreshIndicator(
+          onRefresh: _loadHiveDetails,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (activeVolks.isNotEmpty)
+                  Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: activeVolks
+                        .map(
+                          (v) => _buildVolkTile(
+                            v as Map<String, dynamic>,
+                            tileWidth,
+                            context,
+                          ),
+                        )
+                        .toList(),
                   ),
-                ),
 
-              if (inactiveVolks.isNotEmpty) ...[
-                const SizedBox(height: 32),
-                Theme(
-                  data: Theme.of(
-                    context,
-                  ).copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    title: Text(
-                      'Old Volks (${inactiveVolks.length})',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                if (activeVolks.isEmpty && inactiveVolks.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      'No active Volks.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: const EdgeInsets.only(top: 16.0),
-                    initiallyExpanded: false,
-                    children: [
-                      Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: inactiveVolks
-                            .map(
-                              (v) => _buildVolkTile(
-                                v as Map<String, dynamic>,
-                                tileWidth,
-                                context,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
                   ),
-                ),
+
+                if (inactiveVolks.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  Theme(
+                    data: Theme.of(
+                      context,
+                    ).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      title: Text(
+                        'Old Volks (${inactiveVolks.length})',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(top: 16.0),
+                      initiallyExpanded: false,
+                      children: [
+                        Wrap(
+                          spacing: spacing,
+                          runSpacing: spacing,
+                          children: inactiveVolks
+                              .map(
+                                (v) => _buildVolkTile(
+                                  v as Map<String, dynamic>,
+                                  tileWidth,
+                                  context,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
@@ -1130,7 +1195,7 @@ class _HiveScreenState extends State<HiveScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      temperatur,
+                      '$temperatur°C',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
@@ -1241,24 +1306,33 @@ class _HiveScreenState extends State<HiveScreen> {
     Widget content;
 
     if (filteredLogs.isEmpty) {
-      content = Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      content = _ThemeRefreshIndicator(
+        onRefresh: _loadHiveDetails,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(
-              Icons.receipt_long,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              logsList.isEmpty
-                  ? 'No log entries recorded yet'
-                  : 'No log entries for $_selectedLogYear',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.receipt_long,
+                    size: 64,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    logsList.isEmpty
+                        ? 'No log entries recorded yet'
+                        : 'No log entries for $_selectedLogYear',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1319,80 +1393,84 @@ class _HiveScreenState extends State<HiveScreen> {
                   interactive: true,
                   thickness: 8.0,
                   radius: const Radius.circular(4.0),
-                  child: ListView.builder(
-                    cacheExtent: 3000,
-                    controller: _logScrollController,
-                    padding: const EdgeInsets.all(16.0),
-                    itemCount: listItems.length,
-                    itemBuilder: (context, index) {
-                      final item = listItems[index];
+                  child: _ThemeRefreshIndicator(
+                    onRefresh: _loadHiveDetails,
+                    child: ListView.builder(
+                      cacheExtent: 3000,
+                      controller: _logScrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16.0),
+                      itemCount: listItems.length,
+                      itemBuilder: (context, index) {
+                        final item = listItems[index];
 
-                      if (item is String) {
-                        return Padding(
-                          padding: const EdgeInsets.only(
-                            top: 24.0,
-                            bottom: 16.0,
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0,
-                                  vertical: 8.0,
+                        if (item is String) {
+                          return Padding(
+                            padding: const EdgeInsets.only(
+                              top: 24.0,
+                              bottom: 16.0,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16.0,
+                                    vertical: 8.0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_month,
+                                        size: 16,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimaryContainer,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        item.toUpperCase(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimaryContainer,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1.2,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(20),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Divider(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant
+                                        .withValues(alpha: 0.5),
+                                    thickness: 2,
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_month,
-                                      size: 16,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      item.toUpperCase(),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge
-                                          ?.copyWith(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onPrimaryContainer,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1.2,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Divider(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outlineVariant
-                                      .withValues(alpha: 0.5),
-                                  thickness: 2,
-                                ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        return _buildLogTile(
+                          item as Map<String, dynamic>,
+                          context,
                         );
-                      }
-
-                      return _buildLogTile(
-                        item as Map<String, dynamic>,
-                        context,
-                      );
-                    },
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -1477,11 +1555,64 @@ class _HiveScreenState extends State<HiveScreen> {
                     : null,
               ),
               const SizedBox(width: 16),
-              Text(
-                '$_selectedLogYear',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) {
+                      return SimpleDialog(
+                        title: const Text('Select Year'),
+                        children: sortedYears.map((year) {
+                          return SimpleDialogOption(
+                            onPressed: () {
+                              setState(() {
+                                _selectedLogYear = year;
+                              });
+                              Navigator.pop(context);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8.0,
+                              ),
+                              child: Text(
+                                year.toString(),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: year == _selectedLogYear
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: year == _selectedLogYear
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8.0,
+                    vertical: 4.0,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$_selectedLogYear',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_drop_down),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(width: 16),
               IconButton(
@@ -1764,22 +1895,31 @@ class _HiveScreenState extends State<HiveScreen> {
     }
 
     if (chemsList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return _ThemeRefreshIndicator(
+        onRefresh: _loadHiveDetails,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(
-              Icons.science_outlined,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No chemicals recorded yet',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.science_outlined,
+                    size: 64,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No chemicals recorded yet',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1808,75 +1948,82 @@ class _HiveScreenState extends State<HiveScreen> {
             ? (fullWidth - (spacing * 2)) / 3
             : (isMedium ? (fullWidth - spacing) / 2 : fullWidth);
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (activeChems.isNotEmpty)
-                Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: activeChems
-                      .map(
-                        (c) => _buildChemTile(
-                          c as Map<String, dynamic>,
-                          tileWidth,
-                          context,
-                          true,
-                        ),
-                      )
-                      .toList(),
-                ),
-
-              if (activeChems.isEmpty && inactiveChems.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    'No active chemicals.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+        return _ThemeRefreshIndicator(
+          onRefresh: _loadHiveDetails,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (activeChems.isNotEmpty)
+                  Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: activeChems
+                        .map(
+                          (c) => _buildChemTile(
+                            c as Map<String, dynamic>,
+                            tileWidth,
+                            context,
+                            true,
+                          ),
+                        )
+                        .toList(),
                   ),
-                ),
 
-              if (inactiveChems.isNotEmpty) ...[
-                const SizedBox(height: 32),
-                Theme(
-                  data: Theme.of(
-                    context,
-                  ).copyWith(dividerColor: Colors.transparent),
-                  child: ExpansionTile(
-                    title: Text(
-                      'Disposed Chemicals (${inactiveChems.length})',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                if (activeChems.isEmpty && inactiveChems.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      'No active chemicals.',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: const EdgeInsets.only(top: 16.0),
-                    initiallyExpanded: false,
-                    children: [
-                      Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: inactiveChems
-                            .map(
-                              (c) => _buildChemTile(
-                                c as Map<String, dynamic>,
-                                tileWidth,
-                                context,
-                                false,
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
                   ),
-                ),
+
+                if (inactiveChems.isNotEmpty) ...[
+                  const SizedBox(height: 32),
+                  Theme(
+                    data: Theme.of(
+                      context,
+                    ).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      title: Text(
+                        'Disposed Chemicals (${inactiveChems.length})',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(top: 16.0),
+                      initiallyExpanded: false,
+                      children: [
+                        Wrap(
+                          spacing: spacing,
+                          runSpacing: spacing,
+                          children: inactiveChems
+                              .map(
+                                (c) => _buildChemTile(
+                                  c as Map<String, dynamic>,
+                                  tileWidth,
+                                  context,
+                                  false,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
@@ -2030,22 +2177,31 @@ class _HiveScreenState extends State<HiveScreen> {
     }
 
     if (usersList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return _ThemeRefreshIndicator(
+        onRefresh: _loadHiveDetails,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Icon(
-              Icons.group_off_outlined,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No users found',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.group_off_outlined,
+                    size: 64,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No users found',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -2080,25 +2236,29 @@ class _HiveScreenState extends State<HiveScreen> {
             ? (fullWidth - (spacing * 2)) / 3
             : (isMedium ? (fullWidth - spacing) / 2 : fullWidth);
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: usersList
-                    .map(
-                      (u) => _buildUserTile(
-                        u as Map<String, dynamic>,
-                        tileWidth,
-                        context,
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
+        return _ThemeRefreshIndicator(
+          onRefresh: _loadHiveDetails,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: usersList
+                      .map(
+                        (u) => _buildUserTile(
+                          u as Map<String, dynamic>,
+                          tileWidth,
+                          context,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
+            ),
           ),
         );
       },

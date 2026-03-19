@@ -91,6 +91,59 @@ class NativeLibrary {
       );
   late final _get_hive_details_json = _get_hive_details_jsonPtr
       .asFunction<ffi.Pointer<ffi.Char> Function(int)>();
+
+  ffi.Pointer<ffi.Char> calculate_comb_history(
+    ffi.Pointer<ffi.Char> logs_json,
+    int current_b,
+    int current_h,
+  ) {
+    return _calculate_comb_history(logs_json, current_b, current_h);
+  }
+
+  late final _calculate_comb_historyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('calculate_comb_history');
+  late final _calculate_comb_history = _calculate_comb_historyPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>, int, int)
+      >();
+
+  ffi.Pointer<ffi.Char> submit_action(
+    int hive_id,
+    int volk_id,
+    ffi.Pointer<ffi.Char> action,
+    ffi.Pointer<ffi.Char> data_json,
+  ) {
+    return _submit_action(hive_id, volk_id, action, data_json);
+  }
+
+  late final _submit_actionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Int,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('submit_action');
+  late final _submit_action = _submit_actionPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          int,
+          int,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 }
 
 typedef __u_char = ffi.UnsignedChar;

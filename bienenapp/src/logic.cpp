@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp>
 #include <future>
 #include <chrono>
+#include <regex>
+#include <algorithm>
 
 #define LOG_TAG "BienenApp_CPP"
 
@@ -39,7 +41,7 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         // This ensures that if the main thread times out and returns early, 
         // the background thread still safely owns the client memory and won't crash.
         // httplib::Client cli("192.168.1.140", 8080);
-        httplib::Client cli("10.5.177.29", 8080);
+        httplib::Client cli("10.5.55.49", 8080);
         
         cli.set_address_family(AF_INET);
         cli.set_keep_alive(false);
@@ -229,5 +231,201 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
     else
     {
         return strdup(response.body.c_str());
+    }
+}
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *parse_varroa_statistics(const char *logs_json)
+{
+    try
+    {
+        json logs = json::parse(logs_json);
+        json result = json::array();
+
+        std::regex varroa_regex(R"(([0-9]+)\s*[Vv]arroa.*?([0-9]+)\s*[Tt]ag)");
+
+        for (const auto &log : logs)
+        {
+            std::string action = log.value("action", "");
+            std::string befund = log.value("befund", "");
+            std::string datum = log.value("datum", "");
+
+            std::string action_lower = action;
+            std::transform(action_lower.begin(), action_lower.end(), action_lower.begin(), ::tolower);
+
+            if (action_lower.find("varroa") != std::string::npos || befund.find("Varroa") != std::string::npos || befund.find("varroa") != std::string::npos)
+            {
+                std::smatch match;
+                if (std::regex_search(befund, match, varroa_regex))
+                {
+                    if (match.size() >= 3)
+                    {
+                        double count = std::stod(match[1].str());
+                        double days = std::stod(match[2].str());
+                        if (days == 0)
+                            days = 1; // Prevent division by zero
+                        double per_day = count / days;
+
+                        json entry;
+                        entry["datum"] = datum;
+                        entry["count"] = count;
+                        entry["days"] = days;
+                        entry["per_day"] = per_day;
+                        result.push_back(entry);
+                    }
+                }
+            }
+        }
+
+        std::string res_str = result.dump();
+        return strdup(res_str.c_str());
+    }
+    catch (const std::exception &e)
+    {
+        LOGE("Error parsing varroa stats: %s", e.what());
+        return strdup("[]");
+    }
+}
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *calculate_comb_history(const char *logs_json, int current_b, int current_h)
+{
+    try
+    {
+        json logs = json::parse(logs_json);
+
+        if (!logs.is_array())
+        {
+            return strdup("[]");
+        }
+
+        // Sort logs by date ascending (oldest first)
+        std::sort(logs.begin(), logs.end(), [](const json &a, const json &b)
+                  {
+            std::string dateA = "";
+            if (a.contains("datum") && a["datum"].is_string()) dateA = a["datum"].get<std::string>();
+            std::string dateB = "";
+            if (b.contains("datum") && b["datum"].is_string()) dateB = b["datum"].get<std::string>();
+            return dateA < dateB; });
+
+        std::regex brut_regex(R"(([0-9]+)\s*[Bb]rutwaben)");
+        std::regex drohnen_regex(R"(([0-9]+)\s*[Dd]rohnenwaben)");
+        std::regex honig_regex(R"(([0-9]+)\s*[Hh]onigwaben)");
+
+        // Forward pass for honigraum (Starting from 0 up to current)
+        int s_val = 0;
+        for (auto &log : logs)
+        {
+            std::string action = "";
+            if (log.contains("action") && log["action"].is_string())
+                action = log["action"].get<std::string>();
+            std::string befund = "";
+            if (log.contains("befund") && log["befund"].is_string())
+                befund = log["befund"].get<std::string>();
+
+            std::string action_lower = action;
+            std::transform(action_lower.begin(), action_lower.end(), action_lower.begin(), ::tolower);
+
+            int honig_count = 0;
+            std::smatch match;
+            if (std::regex_search(befund, match, honig_regex) && match.size() >= 2)
+            {
+                honig_count = std::stoi(match[1].str());
+            }
+
+            if (action_lower.find("ausbauen") != std::string::npos)
+            {
+                s_val += honig_count;
+            }
+            else if (action_lower.find("reduktion") != std::string::npos)
+            {
+                s_val -= honig_count;
+                if (s_val < 0)
+                    s_val = 0;
+            }
+            else if (action_lower.find("honig ernten") != std::string::npos)
+            {
+                s_val = 0;
+            }
+
+            log["honigraum"] = std::to_string(s_val);
+            log["honigwaben"] = std::to_string(current_h); // static
+        }
+
+        // Backward pass for brutwaben (Starting from current down to 0)
+        int b_val = current_b;
+        for (auto it = logs.rbegin(); it != logs.rend(); ++it)
+        {
+            auto &log = *it;
+            log["brutwaben"] = std::to_string(b_val);
+
+            std::string action = "";
+            if (log.contains("action") && log["action"].is_string())
+                action = log["action"].get<std::string>();
+            std::string befund = "";
+            if (log.contains("befund") && log["befund"].is_string())
+                befund = log["befund"].get<std::string>();
+
+            std::string action_lower = action;
+            std::transform(action_lower.begin(), action_lower.end(), action_lower.begin(), ::tolower);
+
+            int brut_count = 0;
+            int drohnen_count = 0;
+            std::smatch match;
+
+            if (std::regex_search(befund, match, brut_regex) && match.size() >= 2)
+            {
+                brut_count = std::stoi(match[1].str());
+            }
+            if (std::regex_search(befund, match, drohnen_regex) && match.size() >= 2)
+            {
+                drohnen_count = std::stoi(match[1].str());
+            }
+
+            if (action_lower.find("ausbauen") != std::string::npos)
+            {
+                b_val -= (brut_count + drohnen_count);
+            }
+            else if (action_lower.find("reduktion") != std::string::npos)
+            {
+                b_val += (brut_count + drohnen_count);
+            }
+            if (b_val < 0)
+                b_val = 0;
+        }
+
+        std::string res_str = logs.dump();
+        return strdup(res_str.c_str());
+    }
+    catch (const std::exception &e)
+    {
+        LOGE("Error calculating comb history: %s", e.what());
+        return strdup("[]");
+    }
+}
+
+extern "C" __attribute__((visibility("default"))) __attribute__((used)) const char *submit_action(int hive_id, int volk_id, const char *action, const char *data_json)
+{
+    try
+    {
+        json req_body;
+        req_body["sessionId"] = SESSION_ID;
+        req_body["hiveId"] = hive_id;
+        req_body["volkId"] = volk_id;
+        req_body["action"] = action;
+        req_body["data"] = json::parse(data_json);
+
+        std::string body_str = req_body.dump();
+        HttpResponse response = post_request("/addLogEntry/", body_str);
+        LOGI("Submit action response: %s", response.body.c_str());
+
+        if (response.status != "SUCCESS")
+        {
+            LOGE("Failed to submit action with status: %s", response.body.c_str());
+        }
+        return strdup(response.status.c_str());
+    }
+    catch (const std::exception &e)
+    {
+        LOGE("Error in submit_action: %s", e.what());
+        return strdup("ERROR");
     }
 }

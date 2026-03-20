@@ -1511,6 +1511,50 @@ class _VolkScreenState extends State<VolkScreen> {
 
     try {
       final dynamic decoded = jsonDecode(jsonString);
+
+      if (decoded is Map<String, dynamic> &&
+          decoded['status'] == 'UNAUTHORIZED') {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Session Expired'),
+              content: const Text(
+                'Your session has expired or is invalid. Please log in again.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.go('/login');
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+
+      if (decoded is Map<String, dynamic> &&
+          decoded.containsKey('status') &&
+          decoded['status'] != 'SUCCESS') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                decoded['message']?.toString() ?? 'Error loading volk details.',
+              ),
+            ),
+          );
+        }
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
       Map<String, dynamic>? hiveData;
 
       if (decoded is Map<String, dynamic>) {

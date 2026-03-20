@@ -1,7 +1,7 @@
 extern ActiveSessions active_sessions;
 extern std::string connectString;
 
-std::string handle_get_hive_details(const crow::request &req)
+crow::response handle_get_hive_details(const crow::request &req)
 {
     auto sql = soci::session(soci::mysql, connectString);
     auto body = crow::json::load(req.body);
@@ -12,8 +12,9 @@ std::string handle_get_hive_details(const crow::request &req)
     if (!active_sessions.validate_session(session_id))
     {
         crow::json::wvalue response;
-        response["status"] = "FAILED";
-        return response.dump();
+        response["status"] = "UNAUTHORIZED";
+        response["message"] = "Session expired or invalid. Please log in again.";
+        return crow::response(401, response.dump());
     }
 
     std::cout << "Fetching details for hive ID: " << hive_id << std::endl;
@@ -111,7 +112,7 @@ std::string handle_get_hive_details(const crow::request &req)
                 {
                     std::cout << "Coworker table name is empty for hive ID: " << hive_id << std::endl;
                     response["status"] = "FAILED";
-                    return response.dump();
+                    return crow::response(500, response.dump());
                 }
 
                 // Authorization Check: Check if user exists in the coworker table
@@ -123,10 +124,10 @@ std::string handle_get_hive_details(const crow::request &req)
                 if (!sql.got_data())
                 {
                     std::cout << "Access denied: User ID " << user_id << " not found in " << coworker_table << std::endl;
-                    response["status"] = "FAILED";
+                    response["status"] = "FORBIDDEN";
                     response["message"] = "Access denied. User does not have permission for this hive.";
                     // Return immediately, returning no data
-                    return response.dump();
+                    return crow::response(403, response.dump());
                 }
 
                 // User is authorized, extract their permission level
@@ -267,15 +268,18 @@ std::string handle_get_hive_details(const crow::request &req)
             else
             {
                 response["status"] = "FAILED";
+                response["message"] = "Hive not found.";
                 std::cout << "Hive not found with ID: " << hive_id << std::endl;
+                return crow::response(404, response.dump());
             }
         }
         catch (const std::exception &e)
         {
             response["status"] = "FAILED";
             std::cout << "Error fetching hive details: " << e.what() << std::endl;
+            return crow::response(500, response.dump());
         }
-        return response.dump();
+        return crow::response(200, response.dump());
     }
     catch (std::exception const &e)
     {
@@ -283,6 +287,6 @@ std::string handle_get_hive_details(const crow::request &req)
         crow::json::wvalue response;
         response["status"] = "ERROR";
         response["message"] = e.what();
-        return response.dump();
+        return crow::response(500, response.dump());
     }
 }

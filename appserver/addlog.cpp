@@ -70,7 +70,7 @@ int get_year(const std::string &color, const std::string &date_str)
     return base_year + (diff * 5);
 }
 
-std::string handle_add_log_entry(const crow::request &req)
+crow::response handle_add_log_entry(const crow::request &req)
 {
     auto sql = soci::session(soci::mysql, connectString);
     auto body = crow::json::load(req.body);
@@ -85,7 +85,8 @@ std::string handle_add_log_entry(const crow::request &req)
     {
         crow::json::wvalue response;
         response["status"] = "UNAUTHORIZED";
-        return response.dump();
+        response["message"] = "Session expired or invalid. Please log in again.";
+        return crow::response(401, response.dump());
     }
 
     std::string user_id;
@@ -107,7 +108,7 @@ std::string handle_add_log_entry(const crow::request &req)
             crow::json::wvalue res;
             res["status"] = "FAILED";
             res["message"] = "Hive not found.";
-            return res.dump();
+            return crow::response(404, res.dump());
         }
 
         log_table = master_row.get<std::string>(0);
@@ -122,9 +123,9 @@ std::string handle_add_log_entry(const crow::request &req)
         if (!sql.got_data() || ind != soci::i_ok || permission < 1)
         {
             crow::json::wvalue res;
-            res["status"] = "FAILED";
+            res["status"] = "FORBIDDEN";
             res["message"] = "Not enough permissions to add logs.";
-            return res.dump();
+            return crow::response(403, res.dump());
         }
 
         // Global variables for the query
@@ -381,7 +382,7 @@ std::string handle_add_log_entry(const crow::request &req)
 
         crow::json::wvalue res;
         res["status"] = "SUCCESS";
-        return res.dump();
+        return crow::response(200, res.dump());
     }
     catch (std::exception const &e)
     {
@@ -389,6 +390,6 @@ std::string handle_add_log_entry(const crow::request &req)
         crow::json::wvalue res;
         res["status"] = "ERROR";
         res["message"] = e.what();
-        return res.dump();
+        return crow::response(500, res.dump());
     }
 }

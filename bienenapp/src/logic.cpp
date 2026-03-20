@@ -40,8 +40,8 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         // Instantiate the client inside the thread. 
         // This ensures that if the main thread times out and returns early, 
         // the background thread still safely owns the client memory and won't crash.
-        // httplib::Client cli("192.168.1.140", 8080);
-        httplib::Client cli("10.5.55.49", 8080);
+        httplib::Client cli("192.168.1.140", 8080);
+        // httplib::Client cli("10.5.55.49", 8080);
         
         cli.set_address_family(AF_INET);
         cli.set_keep_alive(false);
@@ -83,19 +83,22 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         return {"SUCCESS", res->body};
     case 400:
         LOGE("Bad request: %s", res->body.c_str());
-        return {"ERROR", "BAD_REQUEST"};
+        return {"BAD_REQUEST", res->body};
     case 401:
         LOGE("Unauthorized");
-        return {"ERROR", "UNAUTHORIZED"};
+        return {"UNAUTHORIZED", res->body};
+    case 403:
+        LOGE("Forbidden");
+        return {"FORBIDDEN", res->body};
     case 404:
         LOGE("Endpoint not found: %s", url.c_str());
-        return {"ERROR", "NOT_FOUND"};
+        return {"NOT_FOUND", res->body};
     case 500:
         LOGE("Internal server error");
-        return {"ERROR", "INTERNAL_SERVER_ERROR"};
+        return {"INTERNAL_SERVER_ERROR", res->body};
     default:
         LOGE("HTTP error %d: %s", res->status, res->body.c_str());
-        return {"ERROR", "HTTP_ERROR"};
+        return {"HTTP_ERROR", res->body};
     }
 
     return HttpResponse{"ERROR", "UNKNOWN_ERROR"};
@@ -135,28 +138,38 @@ login(const char *username, const char *password)
 
     if (response.status != "SUCCESS")
     {
-        LOGE("Login failed with status: %s", response.body.c_str());
-        return strdup(response.body.c_str());
+        LOGE("Login failed with status: %s", response.status.c_str());
+        if (response.status == "ERROR")
+        {
+            if (response.body == "TIMEOUT")
+            {
+                return strdup("Connection timed out. Server might be down.");
+            }
+            return strdup("Network error. Cannot reach the server.");
+        }
+
+        json res_json = parse_response_body(response.body);
+        std::string message = res_json.value("message", "");
+        if (message.empty())
+        {
+            message = "Login failed (HTTP Status: " + response.status + ")";
+        }
+        return strdup(message.c_str());
     }
     else
     {
         json response_json = parse_response_body(response.body);
-        if (response_json["status"] == "SUCCESS" && response_json.contains("sessionId"))
+        if (response_json.value("status", "") == "SUCCESS" && response_json.contains("sessionId"))
         {
             SESSION_ID = response_json["sessionId"].get<std::string>();
             LOGI("Login successful! Session ID: %s", SESSION_ID.c_str());
+            return strdup("SUCCESS");
         }
         else
         {
             LOGE("Login failed: %s", response.body.c_str());
-        }
-        if (response_json.contains("status") && response_json["status"].is_string())
-        {
-            return strdup(response_json["status"].get<std::string>().c_str());
-        }
-        else
-        {
-            return strdup("UNKNOWN");
+            std::string message = response_json.value("message", "Login failed.");
+            return strdup(message.c_str());
         }
     }
 }
@@ -167,6 +180,11 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
     HttpResponse response = post_request("/logout/", body);
     LOGI("Logout response: %s", response.body.c_str());
     SESSION_ID = "";
+
+    if (response.status != "SUCCESS")
+    {
+        return strdup(response.status.c_str());
+    }
 
     return strdup(parse_response_body(response.body).value("status", "UNKNOWN").c_str());
 }
@@ -182,17 +200,43 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
     HttpResponse response = post_request("/getUserHivesOverview/", body);
     LOGI("Hives overview response: %s", response.body.c_str());
 
+    if (response.status == "UNAUTHORIZED")
+    {
+        json err;
+        err["status"] = "UNAUTHORIZED";
+        return strdup(err.dump().c_str());
+    }
+
     if (response.status != "SUCCESS")
     {
-        LOGE("Failed to load hives overview with status: %s", response.body.c_str());
-        return strdup(response.body.c_str());
+        LOGE("Failed to load hives overview with status: %s", response.status.c_str());
+        json err;
+        err["status"] = response.status;
+        if (response.status == "ERROR")
+        {
+            err["message"] = (response.body == "TIMEOUT") ? "Connection timed out. Server might be down." : "Network error. Cannot reach the server.";
+        }
+        else
+        {
+            json res_json = parse_response_body(response.body);
+            std::string message = res_json.value("message", "");
+            if (message.empty())
+                message = "Failed to load overview (HTTP Status: " + response.status + ")";
+            err["message"] = message;
+        }
+        return strdup(err.dump().c_str());
     }
     else
     {
         // save to a global variable for later use in hive details screen
         HIVES_OVERVIEW = parse_response_body(response.body);
 
-        return strdup(response.status.c_str());
+        std::string stat = HIVES_OVERVIEW.value("status", "UNKNOWN");
+        if (stat == "UNAUTHORIZED")
+        {
+            return strdup("UNAUTHORIZED");
+        }
+        return strdup(stat.c_str());
     }
 }
 
@@ -202,15 +246,37 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
     HttpResponse response = post_request("/getUserHivesOverview/", body);
     LOGI("Hives overview response: %s", response.body.c_str());
 
+    if (response.status == "UNAUTHORIZED")
+    {
+        return strdup("UNAUTHORIZED");
+    }
+
     if (response.status != "SUCCESS")
     {
-        LOGE("Failed to load hives overview with status: %s", response.body.c_str());
-        return strdup(response.body.c_str());
+        LOGE("Failed to load hives overview with status: %s", response.status.c_str());
+        json err;
+        err["status"] = response.status;
+        if (response.status == "ERROR")
+        {
+            err["message"] = (response.body == "TIMEOUT") ? "Connection timed out. Server might be down." : "Network error. Cannot reach the server.";
+        }
+        else
+        {
+            json res_json = parse_response_body(response.body);
+            err["message"] = res_json.value("message", "Failed to load overview");
+        }
+        return strdup(err.dump().c_str());
     }
     else
     {
         // save to a global variable for later use in hive details screen
         HIVES_OVERVIEW = parse_response_body(response.body);
+        if (HIVES_OVERVIEW.value("status", "") == "UNAUTHORIZED")
+        {
+            json err;
+            err["status"] = "UNAUTHORIZED";
+            return strdup(err.dump().c_str());
+        }
     }
     std::string overview_str = HIVES_OVERVIEW.dump();
     LOGI("Returning hives overview JSON: %s", overview_str.c_str());
@@ -223,13 +289,41 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
     HttpResponse response = post_request("/getHiveDetails/", body);
     LOGI("Hive details response: %s", response.body.c_str());
 
+    if (response.status == "UNAUTHORIZED")
+    {
+        json err;
+        err["status"] = "UNAUTHORIZED";
+        return strdup(err.dump().c_str());
+    }
+
     if (response.status != "SUCCESS")
     {
-        LOGE("Failed to load hive details with status: %s", response.body.c_str());
-        return strdup(response.body.c_str());
+        LOGE("Failed to load hive details with status: %s", response.status.c_str());
+        json err;
+        err["status"] = response.status;
+        if (response.status == "ERROR")
+        {
+            err["message"] = (response.body == "TIMEOUT") ? "Connection timed out. Server might be down." : "Network error. Cannot reach the server.";
+        }
+        else
+        {
+            json res_json = parse_response_body(response.body);
+            std::string message = res_json.value("message", "");
+            if (message.empty())
+                message = "Failed to load hive details (HTTP Status: " + response.status + ")";
+            err["message"] = message;
+        }
+        return strdup(err.dump().c_str());
     }
     else
     {
+        json res_json = parse_response_body(response.body);
+        if (res_json.value("status", "") == "UNAUTHORIZED")
+        {
+            json err;
+            err["status"] = "UNAUTHORIZED";
+            return strdup(err.dump().c_str());
+        }
         return strdup(response.body.c_str());
     }
 }
@@ -417,11 +511,38 @@ extern "C" __attribute__((visibility("default"))) __attribute__((used)) const ch
         HttpResponse response = post_request("/addLogEntry/", body_str);
         LOGI("Submit action response: %s", response.body.c_str());
 
+        if (response.status == "UNAUTHORIZED")
+        {
+            return strdup("UNAUTHORIZED");
+        }
+
         if (response.status != "SUCCESS")
         {
-            LOGE("Failed to submit action with status: %s", response.body.c_str());
+            LOGE("Failed to submit action with status: %s", response.status.c_str());
+            json err;
+            err["status"] = response.status;
+            if (response.status == "ERROR")
+            {
+                err["message"] = (response.body == "TIMEOUT") ? "Connection timed out. Server might be down." : "Network error. Cannot reach the server.";
+            }
+            else
+            {
+                json res_json = parse_response_body(response.body);
+                std::string message = res_json.value("message", "");
+                if (message.empty())
+                    message = "Failed to submit action (HTTP Status: " + response.status + ")";
+                err["message"] = message;
+            }
+            return strdup(err.dump().c_str());
         }
-        return strdup(response.status.c_str());
+
+        json res_json = parse_response_body(response.body);
+        std::string stat = res_json.value("status", "UNKNOWN");
+        if (stat == "UNAUTHORIZED")
+        {
+            return strdup("UNAUTHORIZED");
+        }
+        return strdup(stat.c_str());
     }
     catch (const std::exception &e)
     {

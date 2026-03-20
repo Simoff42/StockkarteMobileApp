@@ -60,7 +60,7 @@ struct ActiveSessions
 
 extern ActiveSessions active_sessions;
 
-std::string handle_login(const crow::request &req)
+crow::response handle_login(const crow::request &req)
 {
     std::cout << "Received login request with body: " << req.body << std::endl;
     auto body = crow::json::load(req.body);
@@ -84,7 +84,8 @@ std::string handle_login(const crow::request &req)
         {
             crow::json::wvalue response;
             response["status"] = "FAILED";
-            return response.dump();
+            response["message"] = "Invalid username or password.";
+            return crow::response(401, response.dump());
         }
 
         stored_hash.erase(stored_hash.find_last_not_of(" \n\r\t") + 1);
@@ -103,14 +104,15 @@ std::string handle_login(const crow::request &req)
             crow::json::wvalue response;
             response["status"] = "SUCCESS";
             response["sessionId"] = active_sessions.create_session(std::to_string(user_id));
-            return response.dump();
+            return crow::response(200, response.dump());
         }
         else
         {
             std::cout << "Invalid password for user '" << username << "'." << std::endl;
             crow::json::wvalue response;
             response["status"] = "FAILED";
-            return response.dump();
+            response["message"] = "Invalid username or password.";
+            return crow::response(401, response.dump());
         }
     }
     catch (std::exception const &e)
@@ -119,11 +121,11 @@ std::string handle_login(const crow::request &req)
         crow::json::wvalue response;
         response["status"] = "ERROR";
         response["message"] = e.what();
-        return response.dump();
+        return crow::response(500, response.dump());
     }
 }
 
-std::string handle_logout(const crow::request &req)
+crow::response handle_logout(const crow::request &req)
 {
     auto body = crow::json::load(req.body);
     std::string session_id = body["sessionId"].s();
@@ -133,12 +135,12 @@ std::string handle_logout(const crow::request &req)
         active_sessions.sessions.erase(session_id);
         crow::json::wvalue response;
         response["status"] = "SUCCESS";
-        return response.dump();
+        return crow::response(200, response.dump());
     }
     else
     {
         crow::json::wvalue response;
         response["status"] = "FAILED";
-        return response.dump();
+        return crow::response(400, response.dump());
     }
 }

@@ -170,25 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Login Failed'),
-          content: Text(switch (loginSuccess) {
-            "FAILED" => "Invalid username or password.",
-            "TIMEOUT" =>
-              "The server took too long to respond. Please try again.",
-            "NETWORK_ERROR" =>
-              "Could not connect to the server. Please check your internet connection.",
-            "BAD_REQUEST" =>
-              "The server rejected the request. Please contact support.",
-            "INTERNAL_SERVER_ERROR" =>
-              "The server encountered an error. Please try again later.",
-            "HTTP_ERROR" =>
-              "An unexpected HTTP error occurred. Please try again.",
-            "UNAUTHORIZED" => "You are not authorized to perform this action.",
-            "NOT_FOUND" =>
-              "The requested resource was not found on the server.",
-            "ERROR" =>
-              "An unknown error occurred on the server. Please try again.",
-            _ => "An unknown error occurred.",
-          }),
+          content: Text(loginSuccess),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),

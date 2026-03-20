@@ -113,20 +113,62 @@ class _HiveScreenState extends State<HiveScreen> {
     final jsonString = await fetchHiveDetailsInIsolate(hiveId);
 
     if (mounted) {
-      setState(() {
-        try {
-          final dynamic decoded = jsonDecode(jsonString);
+      try {
+        final dynamic decoded = jsonDecode(jsonString);
 
+        if (decoded is Map<String, dynamic> &&
+            decoded['status'] == 'UNAUTHORIZED') {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Session Expired'),
+              content: const Text(
+                'Your session has expired or is invalid. Please log in again.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    context.go('/login');
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+
+        if (decoded is Map<String, dynamic> &&
+            decoded.containsKey('status') &&
+            decoded['status'] != 'SUCCESS') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                decoded['message']?.toString() ?? 'Error loading hive details.',
+              ),
+            ),
+          );
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
+
+        setState(() {
           if (decoded is Map<String, dynamic>) {
             _hiveDetails = decoded;
           } else if (decoded is List && decoded.isNotEmpty) {
             _hiveDetails = decoded.first as Map<String, dynamic>;
           }
-        } catch (e) {
-          debugPrint('Error parsing hive details: $e');
-        }
-        _isLoading = false;
-      });
+          _isLoading = false;
+        });
+      } catch (e) {
+        debugPrint('Error parsing hive details: $e');
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

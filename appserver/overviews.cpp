@@ -2,7 +2,7 @@
 extern ActiveSessions active_sessions;
 extern std::string connectString;
 
-std::string handle_get_user_hives_overview(const crow::request &req)
+crow::response handle_get_user_hives_overview(const crow::request &req)
 {
     auto sql = soci::session(soci::mysql, connectString);
     auto body = crow::json::load(req.body);
@@ -11,8 +11,9 @@ std::string handle_get_user_hives_overview(const crow::request &req)
     if (!active_sessions.validate_session(session_id))
     {
         crow::json::wvalue response;
-        response["status"] = "FAILED";
-        return response.dump();
+        response["status"] = "UNAUTHORIZED";
+        response["message"] = "Session expired or invalid. Please log in again.";
+        return crow::response(401, response.dump());
     }
 
     try
@@ -79,15 +80,16 @@ std::string handle_get_user_hives_overview(const crow::request &req)
         {
             response["status"] = "ERROR";
             response["message"] = e.what();
+            return crow::response(500, response.dump());
         }
 
-        return response.dump();
+        return crow::response(200, response.dump());
     }
     catch (std::exception const &e)
     {
         std::cerr << "Database Query Failed: " << e.what() << '\n';
         crow::json::wvalue error_response;
         error_response["status"] = "FAILED";
-        return error_response.dump();
+        return crow::response(500, error_response.dump());
     }
 }

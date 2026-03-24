@@ -1,43 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:isolate';
-import 'dart:async';
-import 'package:ffi/ffi.dart';
-import 'dart:ffi' as ffi;
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
-// Import our globally instantiated native backend
-import '../core/native_backend.dart';
+// Import our platform-agnostic API facade
+import '../core/api/api.dart';
 
 // Note: Ensure MarkingColors is imported from your theme definition file!
 import '../main.dart';
-
-ffi.Pointer<ffi.Char> stringToNative(String str) {
-  final nativeStr = str.toNativeUtf8();
-  return nativeStr.cast<ffi.Char>();
-}
-
-String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  if (nativeStr == ffi.nullptr) return '';
-
-  int length = 0;
-  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
-  while ((uint8Pointer + length).value != 0) {
-    length++;
-  }
-  final bytes = uint8Pointer.asTypedList(length);
-  return utf8.decode(bytes, allowMalformed: true);
-}
-
-Future<String> attemptLogoutInIsolate() async {
-  return await Isolate.run(() {
-    final result = backend.logout();
-    return nativeToString(result);
-  });
-}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.title});
@@ -74,10 +47,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadHivesData() async {
-    final jsonString = await Isolate.run(() {
-      final result = backend.get_hives_overview_json();
-      return nativeToString(result);
-    });
+    final jsonString = await AppApi.getHivesOverviewJson();
 
     if (mounted) {
       final dynamic decoded = jsonDecode(jsonString);
@@ -492,7 +462,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             tooltip: 'Logout',
             onPressed: () async {
               HapticFeedback.heavyImpact();
-              await attemptLogoutInIsolate();
+              await AppApi.logout();
               if (mounted && context.mounted) {
                 context.go('/login');
               }
@@ -501,11 +471,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ],
       ),
       // Automatically switch between Row (Landscape) and Column (Portrait)
-      body: _hives.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : isLandscape
-          ? Row(children: [hivesListWidget, mapWidget])
-          : Column(children: [hivesListWidget, mapWidget]),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1600),
+          child: _hives.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : isLandscape
+              ? Row(children: [hivesListWidget, mapWidget])
+              : Column(children: [hivesListWidget, mapWidget]),
+        ),
+      ),
     );
   }
 

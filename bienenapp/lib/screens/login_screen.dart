@@ -1,57 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:vibration/vibration.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../core/native_backend.dart';
-import 'package:ffi/ffi.dart';
-import 'dart:ffi' as ffi;
-import '../cppasync.dart';
-import 'dart:isolate';
-import 'dart:convert';
 
-ffi.Pointer<ffi.Char> stringToNative(String str) {
-  final nativeStr = str.toNativeUtf8();
-  return nativeStr.cast<ffi.Char>();
-}
-
-String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  if (nativeStr == ffi.nullptr) return '';
-
-  int length = 0;
-  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
-  while (uint8Pointer.elementAt(length).value != 0) {
-    length++;
-  }
-  final bytes = uint8Pointer.asTypedList(length);
-  return utf8.decode(bytes, allowMalformed: true);
-}
+import '../core/api/api.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
-}
-
-Future<String> attemptLoginInIsolate(String username, String password) async {
-  return await Isolate.run(() {
-    final dylib = ffi.DynamicLibrary.open('libnative_backend.so');
-
-    final cUsername = username.toNativeUtf8();
-    final cPassword = password.toNativeUtf8();
-
-    final result = backend.login(
-      cUsername.cast<ffi.Char>(),
-      cPassword.cast<ffi.Char>(),
-    );
-
-    calloc.free(cUsername);
-    calloc.free(cPassword);
-
-    return nativeToString(result);
-  });
 }
 
 class _LoginScreenState extends State<LoginScreen> {
@@ -82,6 +43,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// Checks if the device has fingerprint available AND if we have saved credentials
   Future<void> _checkBiometricsAndSavedCredentials() async {
+    if (kIsWeb) {
+      return; // Disable biometric checks and secure storage access on the web
+    }
+
     try {
       final canCheck = await _localAuth.canCheckBiometrics;
       final isSupported = await _localAuth.isDeviceSupported();
@@ -125,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final password = await _secureStorage.read(key: 'saved_password');
 
         if (username != null && password != null) {
-          final loginSuccess = await attemptLoginInIsolate(username, password);
+          final loginSuccess = await AppApi.login(username, password);
           if (mounted) {
             setState(() => _isLoading = false);
             await _handleLoginResult(loginSuccess, username, password);
@@ -149,8 +114,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (loginSuccess == "SUCCESS") {
       // SAVE credentials securely for future biometric logins
-      await _secureStorage.write(key: 'saved_username', value: username);
-      await _secureStorage.write(key: 'saved_password', value: password);
+      if (!kIsWeb) {
+        await _secureStorage.write(key: 'saved_username', value: username);
+        await _secureStorage.write(key: 'saved_password', value: password);
+      }
 
       if (mounted) context.go('/home');
 
@@ -161,8 +128,10 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } else {
       // If login fails, clear any saved secure credentials to be safe
-      await _secureStorage.delete(key: 'saved_username');
-      await _secureStorage.delete(key: 'saved_password');
+      if (!kIsWeb) {
+        await _secureStorage.delete(key: 'saved_username');
+        await _secureStorage.delete(key: 'saved_password');
+      }
       setState(() => _canUseBiometrics = false);
 
       if (!mounted) return;
@@ -191,101 +160,104 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.lock_outline, size: 80),
-              const SizedBox(height: 32),
-              Text(
-                'Welcome Back',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 32),
-              TextField(
-                controller: usernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 450),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock_outline, size: 80),
+                const SizedBox(height: 32),
+                Text(
+                  'Welcome Back',
+                  style: Theme.of(context).textTheme.headlineMedium,
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.password),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Username',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.person),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: FilledButton(
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.all<Color>(
-                      Theme.of(context).colorScheme.tertiary,
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.password),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.all<Color>(
+                        Theme.of(context).colorScheme.tertiary,
+                      ),
+                    ),
+                    onPressed: _isLoading
+                        ? null
+                        : () async {
+                            HapticFeedback.heavyImpact();
+                            final username = usernameController.text;
+                            final password = passwordController.text;
+
+                            setState(() => _isLoading = true);
+
+                            final loginSuccess = await AppApi.login(
+                              username,
+                              password,
+                            );
+
+                            setState(() => _isLoading = false);
+
+                            // Handle login result using the helper method
+                            await _handleLoginResult(
+                              loginSuccess,
+                              username,
+                              password,
+                            );
+                          },
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
+                          )
+                        : const Text('Login', style: TextStyle(fontSize: 18)),
+                  ),
+                ),
+
+                // Only show the biometric button if available and credentials exist
+                if (_canUseBiometrics) ...[
+                  const SizedBox(height: 24),
+                  TextButton.icon(
+                    onPressed: _isLoading ? null : _attemptBiometricLogin,
+                    icon: const Icon(Icons.fingerprint, size: 36),
+                    label: const Text(
+                      'Login with Fingerprint',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 24,
+                      ),
                     ),
                   ),
-                  onPressed: _isLoading
-                      ? null
-                      : () async {
-                          HapticFeedback.heavyImpact();
-                          final username = usernameController.text;
-                          final password = passwordController.text;
-
-                          setState(() => _isLoading = true);
-
-                          final loginSuccess = await attemptLoginInIsolate(
-                            username,
-                            password,
-                          );
-
-                          setState(() => _isLoading = false);
-
-                          // Handle login result using the helper method
-                          await _handleLoginResult(
-                            loginSuccess,
-                            username,
-                            password,
-                          );
-                        },
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.black,
-                          ),
-                        )
-                      : const Text('Login', style: TextStyle(fontSize: 18)),
-                ),
-              ),
-
-              // Only show the biometric button if available and credentials exist
-              if (_canUseBiometrics) ...[
-                const SizedBox(height: 24),
-                TextButton.icon(
-                  onPressed: _isLoading ? null : _attemptBiometricLogin,
-                  icon: const Icon(Icons.fingerprint, size: 36),
-                  label: const Text(
-                    'Login with Fingerprint',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 24,
-                    ),
-                  ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

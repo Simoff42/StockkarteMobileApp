@@ -3,7 +3,7 @@
 #include <string>
 #include "httplib.h"
 #include <iostream>
-#include <android/log.h>
+
 #include <nlohmann/json.hpp>
 #include <future>
 #include <chrono>
@@ -12,9 +12,48 @@
 
 #define LOG_TAG "BienenApp_CPP"
 
+#ifdef __ANDROID__
+#include <android/log.h>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#else
+#include <cstdio>
+#define LOGI(...)                       \
+    do                                  \
+    {                                   \
+        printf("INFO | %s: ", LOG_TAG); \
+        printf(__VA_ARGS__);            \
+        printf("\n");                   \
+        fflush(stdout);                 \
+    } while (0)
+#define LOGE(...)                        \
+    do                                   \
+    {                                    \
+        printf("ERROR | %s: ", LOG_TAG); \
+        printf(__VA_ARGS__);             \
+        printf("\n");                    \
+        fflush(stdout);                  \
+    } while (0)
+#define LOGD(...)                        \
+    do                                   \
+    {                                    \
+        printf("DEBUG | %s: ", LOG_TAG); \
+        printf(__VA_ARGS__);             \
+        printf("\n");                    \
+        fflush(stdout);                  \
+    } while (0)
+#endif
+
+// WEB
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
+#endif
+// END
+
+#include <cstdlib>
 
 using json = nlohmann::json;
 
@@ -29,10 +68,94 @@ struct HttpResponse
 std::string SESSION_ID;
 unsigned val = 0;
 
+#ifdef __EMSCRIPTEN__
+EM_JS(char *, js_fetch_sync, (const char *url_cstr, const char *body_cstr), {
+    var url = UTF8ToString(url_cstr);
+    var body = UTF8ToString(body_cstr);
+    var xhr = new XMLHttpRequest();
+
+    // Using synchronous request (third parameter = false)
+    xhr.open('POST', 'http://192.168.1.140:8080' + url, false);
+    // xhr.open('POST', 'http://10.5.55.122:8080' + url, false);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    try
+    {
+        xhr.send(body);
+        var res = JSON.stringify({
+            status : xhr.status,
+            body : xhr.responseText
+        });
+        var lengthBytes = lengthBytesUTF8(res) + 1;
+        var stringOnWasmHeap = _malloc(lengthBytes);
+        stringToUTF8(res, stringOnWasmHeap, lengthBytes);
+        return stringOnWasmHeap;
+    }
+    catch (e)
+    {
+        var res = JSON.stringify({
+            status : 0,
+            body : e.message
+        });
+        var lengthBytes = lengthBytesUTF8(res) + 1;
+        var stringOnWasmHeap = _malloc(lengthBytes);
+        stringToUTF8(res, stringOnWasmHeap, lengthBytes);
+        return stringOnWasmHeap;
+    }
+});
+#endif
+
 HttpResponse post_request(const std::string &url, const std::string &body)
 {
     LOGI("Preparing to send POST request to %s with body: %s", url.c_str(), body.c_str());
 
+#ifdef __EMSCRIPTEN__
+    char *res_cstr = js_fetch_sync(url.c_str(), body.c_str());
+    std::string res_str(res_cstr);
+    free(res_cstr);
+
+    try
+    {
+        json j = json::parse(res_str);
+        int status = j.value("status", 0);
+        std::string res_body = j.value("body", "");
+
+        LOGI("Received response: %d", status);
+
+        switch (status)
+        {
+        case 200:
+        case 201:
+            return {"SUCCESS", res_body};
+        case 400:
+            LOGE("Bad request: %s", res_body.c_str());
+            return {"BAD_REQUEST", res_body};
+        case 401:
+            LOGE("Unauthorized");
+            return {"UNAUTHORIZED", res_body};
+        case 403:
+            LOGE("Forbidden");
+            return {"FORBIDDEN", res_body};
+        case 404:
+            LOGE("Endpoint not found: %s", url.c_str());
+            return {"NOT_FOUND", res_body};
+        case 500:
+            LOGE("Internal server error");
+            return {"INTERNAL_SERVER_ERROR", res_body};
+        case 0:
+            LOGE("Network error");
+            return {"ERROR", "NETWORK_ERROR"};
+        default:
+            LOGE("HTTP error %d: %s", status, res_body.c_str());
+            return {"HTTP_ERROR", res_body};
+        }
+    }
+    catch (const std::exception &e)
+    {
+        LOGE("Error parsing JS fetch response: %s", e.what());
+        return {"ERROR", "UNKNOWN_ERROR"};
+    }
+#else
     // Wrap the entire network instantiation and request in an async worker thread
     // We capture 'url' and 'body' by value so the thread has its own safe copies.
     auto async_call = std::async(std::launch::async, [url, body]()
@@ -40,8 +163,8 @@ HttpResponse post_request(const std::string &url, const std::string &body)
         // Instantiate the client inside the thread. 
         // This ensures that if the main thread times out and returns early, 
         // the background thread still safely owns the client memory and won't crash.
-        httplib::Client cli("192.168.1.140", 8080);
-        // httplib::Client cli("10.5.55.49", 8080);
+        // httplib::Client cli("192.168.1.140", 8080);
+        httplib::Client cli("10.5.59.55", 8080);
         
         cli.set_address_family(AF_INET);
         cli.set_keep_alive(false);
@@ -102,6 +225,7 @@ HttpResponse post_request(const std::string &url, const std::string &body)
     }
 
     return HttpResponse{"ERROR", "UNKNOWN_ERROR"};
+#endif
 }
 
 json parse_response_body(const std::string &body)

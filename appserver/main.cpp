@@ -1,4 +1,5 @@
 #include "crow.h"
+#include <crow/middlewares/cors.h>
 #include "login.cpp"
 #include "sqlconn.cpp"
 #include "overviews.cpp"
@@ -11,7 +12,13 @@ std::string connectString = "host=127.0.0.1 port=3306 db=test user=root";
 int main()
 {
     connectdb();
-    crow::SimpleApp app;
+
+    crow::App<crow::CORSHandler> app;
+    auto &cors = app.get_middleware<crow::CORSHandler>();
+    cors.global()
+        .headers("*")
+        .methods("POST"_method, "GET"_method, "OPTIONS"_method)
+        .origin("*");
 
     CROW_ROUTE(app, "/login/").methods("POST"_method)([](const crow::request &req)
                                                       { return handle_login(req); });
@@ -28,6 +35,6 @@ int main()
     CROW_ROUTE(app, "/addLogEntry/").methods("POST"_method)([](const crow::request &req)
                                                             { return handle_add_log_entry(req); });
 
-    app.port(8080).multithreaded().bindaddr("192.168.1.140").run();
-    // app.port(8080).multithreaded().bindaddr("10.5.55.49").run();
+    // app.port(8080).multithreaded().bindaddr("192.168.1.140").run();
+    app.port(8080).multithreaded().bindaddr("10.5.59.55").run();
 }

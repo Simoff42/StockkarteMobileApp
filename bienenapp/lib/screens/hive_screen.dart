@@ -1,48 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ffi/ffi.dart';
-import 'dart:ffi' as ffi;
 import 'dart:convert';
-import 'dart:isolate';
 import 'dart:async';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// Import your globally instantiated native backend
-import '../core/native_backend.dart';
-
-ffi.Pointer<ffi.Char> stringToNative(String str) {
-  final nativeStr = str.toNativeUtf8();
-  return nativeStr.cast<ffi.Char>();
-}
-
-String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  if (nativeStr == ffi.nullptr) return '';
-
-  int length = 0;
-  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
-  while ((uint8Pointer + length).value != 0) {
-    length++;
-  }
-  final bytes = uint8Pointer.asTypedList(length);
-  return utf8.decode(bytes, allowMalformed: true);
-}
-
-Future<String> attemptLogoutInIsolate() async {
-  return await Isolate.run(() {
-    final result = backend.logout();
-    return nativeToString(result);
-  });
-}
-
-Future<String> fetchHiveDetailsInIsolate(int id) async {
-  return await Isolate.run(() {
-    final result = backend.get_hive_details_json(id);
-    return nativeToString(result);
-  });
-}
+import '../core/api/api.dart';
 
 class _ThemeRefreshIndicator extends StatelessWidget {
   final Future<void> Function() onRefresh;
@@ -110,7 +75,7 @@ class _HiveScreenState extends State<HiveScreen> {
 
   Future<void> _loadHiveDetails() async {
     final int hiveId = int.tryParse(widget.id) ?? 0;
-    final jsonString = await fetchHiveDetailsInIsolate(hiveId);
+    final jsonString = await AppApi.getHiveDetailsJson(hiveId);
 
     if (mounted) {
       try {
@@ -376,11 +341,14 @@ class _HiveScreenState extends State<HiveScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isWide = constraints.maxWidth > 800;
-        final bool isMedium = constraints.maxWidth > 500 && !isWide;
+        final double availableWidth = constraints.maxWidth > 1200
+            ? 1200
+            : constraints.maxWidth;
+        final bool isWide = availableWidth > 800;
+        final bool isMedium = availableWidth > 500 && !isWide;
 
         final double spacing = 16.0;
-        final double fullWidth = constraints.maxWidth - (spacing * 2);
+        final double fullWidth = availableWidth - (spacing * 2);
 
         final double thirdWidth = isWide
             ? (fullWidth - (spacing * 2)) / 3
@@ -436,226 +404,234 @@ class _HiveScreenState extends State<HiveScreen> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                _buildInfoCard(
-                  title: 'Name',
-                  icon: Icons.hexagon_outlined,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Name', valName),
-                  content: Text(
-                    valName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Hive Number',
-                  icon: Icons.numbers,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Hive Number', valHiveNum),
-                  content: Text(
-                    valHiveNum,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Street',
-                  icon: Icons.signpost_outlined,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Street', valStreet),
-                  content: Text(
-                    valStreet,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Place',
-                  icon: Icons.location_on_outlined,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Place', valLocation),
-                  content: Text(
-                    valLocation,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Map & Coordinates',
-                  icon: Icons.map_outlined,
-                  width: fullWidth,
-                  onTap: () async {
-                    if (coords != null) {
-                      final url = Uri.parse(
-                        'https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}',
-                      );
-                      try {
-                        final launched = await launchUrl(
-                          url,
-                          mode: LaunchMode.externalApplication,
-                        );
-                        if (!launched) {
-                          final fallbackLaunched = await launchUrl(
-                            url,
-                            mode: LaunchMode.platformDefault,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    _buildInfoCard(
+                      title: 'Name',
+                      icon: Icons.hexagon_outlined,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Name', valName),
+                      content: Text(
+                        valName,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Hive Number',
+                      icon: Icons.numbers,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Hive Number', valHiveNum),
+                      content: Text(
+                        valHiveNum,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Street',
+                      icon: Icons.signpost_outlined,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Street', valStreet),
+                      content: Text(
+                        valStreet,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Place',
+                      icon: Icons.location_on_outlined,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Place', valLocation),
+                      content: Text(
+                        valLocation,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Map & Coordinates',
+                      icon: Icons.map_outlined,
+                      width: fullWidth,
+                      onTap: () async {
+                        if (coords != null) {
+                          final url = Uri.parse(
+                            'https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}',
                           );
-                          if (!fallbackLaunched) {
+                          try {
+                            final launched = await launchUrl(
+                              url,
+                              mode: LaunchMode.externalApplication,
+                            );
+                            if (!launched) {
+                              final fallbackLaunched = await launchUrl(
+                                url,
+                                mode: LaunchMode.platformDefault,
+                              );
+                              if (!fallbackLaunched) {
+                                _copyToClipboard('Coordinates', coordsText);
+                              }
+                            }
+                          } catch (e) {
                             _copyToClipboard('Coordinates', coordsText);
                           }
+                        } else {
+                          _copyToClipboard('Coordinates', coordsText);
                         }
-                      } catch (e) {
-                        _copyToClipboard('Coordinates', coordsText);
-                      }
-                    } else {
-                      _copyToClipboard('Coordinates', coordsText);
-                    }
-                  },
-                  content: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (coords != null) ...[
-                        IgnorePointer(
-                          child: Container(
-                            height: 150,
-                            clipBehavior: Clip.antiAlias,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: FlutterMap(
-                              options: MapOptions(
-                                initialCenter: coords,
-                                initialZoom: 15.0,
-                                interactionOptions: const InteractionOptions(
-                                  flags: InteractiveFlag.none,
+                      },
+                      content: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (coords != null) ...[
+                            IgnorePointer(
+                              child: Container(
+                                height: 150,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
                                 ),
-                              ),
-                              children: [
-                                TileLayer(
-                                  urlTemplate:
-                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName: 'com.example.hivesapp',
-                                ),
-                                MarkerLayer(
-                                  markers: [
-                                    Marker(
-                                      point: coords,
-                                      width: 40,
-                                      height: 40,
-                                      alignment: Alignment.topCenter,
-                                      child: Icon(
-                                        Icons.location_on,
-                                        color: Colors.blue.shade600,
-                                        size: 40,
-                                      ),
+                                child: FlutterMap(
+                                  options: MapOptions(
+                                    initialCenter: coords,
+                                    initialZoom: 15.0,
+                                    interactionOptions:
+                                        const InteractionOptions(
+                                          flags: InteractiveFlag.none,
+                                        ),
+                                  ),
+                                  children: [
+                                    TileLayer(
+                                      urlTemplate:
+                                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                      userAgentPackageName:
+                                          'com.example.hivesapp',
+                                    ),
+                                    MarkerLayer(
+                                      markers: [
+                                        Marker(
+                                          point: coords,
+                                          width: 40,
+                                          height: 40,
+                                          alignment: Alignment.topCenter,
+                                          child: Icon(
+                                            Icons.location_on,
+                                            color: Colors.blue.shade600,
+                                            size: 40,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                              ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(
+                                coordsText,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      fontFamily: 'monospace',
+                                      letterSpacing: 1.2,
+                                    ),
+                              ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Your Permission',
+                      icon: Icons.security_outlined,
+                      width: thirdWidth,
+                      onTap: () =>
+                          _copyToClipboard('Permission Level', permLabel),
+                      content: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                        const SizedBox(height: 8),
-                      ],
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.4),
-                          borderRadius: BorderRadius.circular(8),
+                          color: permBg,
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Center(
-                          child: Text(
-                            coordsText,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  fontFamily: 'monospace',
-                                  letterSpacing: 1.2,
-                                ),
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(permIcon, size: 16, color: permColor),
+                            const SizedBox(width: 6),
+                            Text(
+                              permLabel,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: permColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Your Permission',
-                  icon: Icons.security_outlined,
-                  width: thirdWidth,
-                  onTap: () => _copyToClipboard('Permission Level', permLabel),
-                  content: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
                     ),
-                    decoration: BoxDecoration(
-                      color: permBg,
-                      borderRadius: BorderRadius.circular(6),
+                    _buildInfoCard(
+                      title: 'Owner',
+                      icon: Icons.person_outline,
+                      width: thirdWidth,
+                      onTap: () => _copyToClipboard('Owner', valOwner),
+                      content: Text(
+                        valOwner,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(permIcon, size: 16, color: permColor),
-                        const SizedBox(width: 6),
-                        Text(
-                          permLabel,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: permColor,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ],
+                    _buildInfoCard(
+                      title: 'Creation Date',
+                      icon: Icons.calendar_today_outlined,
+                      width: thirdWidth,
+                      onTap: () => _copyToClipboard('Creation Date', valDate),
+                      content: Text(
+                        valDate,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
-                  ),
+                    _buildInfoCard(
+                      title: 'Veterinarian',
+                      icon: Icons.medical_services_outlined,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Veterinarian', valVet),
+                      content: Text(
+                        valVet,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Inspector',
+                      icon: Icons.assignment_ind_outlined,
+                      width: pairedWidth,
+                      onTap: () => _copyToClipboard('Inspector', valInspector),
+                      content: Text(
+                        valInspector,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ],
                 ),
-                _buildInfoCard(
-                  title: 'Owner',
-                  icon: Icons.person_outline,
-                  width: thirdWidth,
-                  onTap: () => _copyToClipboard('Owner', valOwner),
-                  content: Text(
-                    valOwner,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Creation Date',
-                  icon: Icons.calendar_today_outlined,
-                  width: thirdWidth,
-                  onTap: () => _copyToClipboard('Creation Date', valDate),
-                  content: Text(
-                    valDate,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Veterinarian',
-                  icon: Icons.medical_services_outlined,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Veterinarian', valVet),
-                  content: Text(
-                    valVet,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Inspector',
-                  icon: Icons.assignment_ind_outlined,
-                  width: pairedWidth,
-                  onTap: () => _copyToClipboard('Inspector', valInspector),
-                  content: Text(
-                    valInspector,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
@@ -934,10 +910,13 @@ class _HiveScreenState extends State<HiveScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isWide = constraints.maxWidth > 800;
-        final bool isMedium = constraints.maxWidth > 500 && !isWide;
+        final double availableWidth = constraints.maxWidth > 1200
+            ? 1200
+            : constraints.maxWidth;
+        final bool isWide = availableWidth > 800;
+        final bool isMedium = availableWidth > 500 && !isWide;
         final double spacing = 16.0;
-        final double fullWidth = constraints.maxWidth - (spacing * 2);
+        final double fullWidth = availableWidth - (spacing * 2);
 
         final double tileWidth = isWide
             ? (fullWidth - (spacing * 2)) / 3
@@ -948,74 +927,82 @@ class _HiveScreenState extends State<HiveScreen> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (activeVolks.isNotEmpty)
-                  Wrap(
-                    spacing: spacing,
-                    runSpacing: spacing,
-                    children: activeVolks
-                        .map(
-                          (v) => _buildVolkTile(
-                            v as Map<String, dynamic>,
-                            tileWidth,
-                            context,
-                          ),
-                        )
-                        .toList(),
-                  ),
-
-                if (activeVolks.isEmpty && inactiveVolks.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Text(
-                      'No active Volks.',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-
-                if (inactiveVolks.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  Theme(
-                    data: Theme.of(
-                      context,
-                    ).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      title: Text(
-                        'Old Volks (${inactiveVolks.length})',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Theme.of(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (activeVolks.isNotEmpty)
+                      Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        children: activeVolks
+                            .map(
+                              (v) => _buildVolkTile(
+                                v as Map<String, dynamic>,
+                                tileWidth,
                                 context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                            ),
+                              ),
+                            )
+                            .toList(),
                       ),
-                      tilePadding: EdgeInsets.zero,
-                      childrenPadding: const EdgeInsets.only(top: 16.0),
-                      initiallyExpanded: false,
-                      children: [
-                        Wrap(
-                          spacing: spacing,
-                          runSpacing: spacing,
-                          children: inactiveVolks
-                              .map(
-                                (v) => _buildVolkTile(
-                                  v as Map<String, dynamic>,
-                                  tileWidth,
+
+                    if (activeVolks.isEmpty && inactiveVolks.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          'No active Volks.',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
                                   context,
-                                ),
-                              )
-                              .toList(),
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
+                      ),
+
+                    if (inactiveVolks.isNotEmpty) ...[
+                      const SizedBox(height: 32),
+                      Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          title: Text(
+                            'Old Volks (${inactiveVolks.length})',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: const EdgeInsets.only(top: 16.0),
+                          initiallyExpanded: false,
+                          children: [
+                            Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              children: inactiveVolks
+                                  .map(
+                                    (v) => _buildVolkTile(
+                                      v as Map<String, dynamic>,
+                                      tileWidth,
+                                      context,
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -1981,10 +1968,13 @@ class _HiveScreenState extends State<HiveScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isWide = constraints.maxWidth > 800;
-        final bool isMedium = constraints.maxWidth > 500 && !isWide;
+        final double availableWidth = constraints.maxWidth > 1200
+            ? 1200
+            : constraints.maxWidth;
+        final bool isWide = availableWidth > 800;
+        final bool isMedium = availableWidth > 500 && !isWide;
         final double spacing = 16.0;
-        final double fullWidth = constraints.maxWidth - (spacing * 2);
+        final double fullWidth = availableWidth - (spacing * 2);
 
         final double tileWidth = isWide
             ? (fullWidth - (spacing * 2)) / 3
@@ -1995,76 +1985,84 @@ class _HiveScreenState extends State<HiveScreen> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (activeChems.isNotEmpty)
-                  Wrap(
-                    spacing: spacing,
-                    runSpacing: spacing,
-                    children: activeChems
-                        .map(
-                          (c) => _buildChemTile(
-                            c as Map<String, dynamic>,
-                            tileWidth,
-                            context,
-                            true,
-                          ),
-                        )
-                        .toList(),
-                  ),
-
-                if (activeChems.isEmpty && inactiveChems.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16.0),
-                    child: Text(
-                      'No active chemicals.',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-
-                if (inactiveChems.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  Theme(
-                    data: Theme.of(
-                      context,
-                    ).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      title: Text(
-                        'Disposed Chemicals (${inactiveChems.length})',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: Theme.of(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (activeChems.isNotEmpty)
+                      Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        children: activeChems
+                            .map(
+                              (c) => _buildChemTile(
+                                c as Map<String, dynamic>,
+                                tileWidth,
                                 context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                true,
+                              ),
+                            )
+                            .toList(),
                       ),
-                      tilePadding: EdgeInsets.zero,
-                      childrenPadding: const EdgeInsets.only(top: 16.0),
-                      initiallyExpanded: false,
-                      children: [
-                        Wrap(
-                          spacing: spacing,
-                          runSpacing: spacing,
-                          children: inactiveChems
-                              .map(
-                                (c) => _buildChemTile(
-                                  c as Map<String, dynamic>,
-                                  tileWidth,
+
+                    if (activeChems.isEmpty && inactiveChems.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          'No active chemicals.',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
                                   context,
-                                  false,
-                                ),
-                              )
-                              .toList(),
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
+                      ),
+
+                    if (inactiveChems.isNotEmpty) ...[
+                      const SizedBox(height: 32),
+                      Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          title: Text(
+                            'Disposed Chemicals (${inactiveChems.length})',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: const EdgeInsets.only(top: 16.0),
+                          initiallyExpanded: false,
+                          children: [
+                            Wrap(
+                              spacing: spacing,
+                              runSpacing: spacing,
+                              children: inactiveChems
+                                  .map(
+                                    (c) => _buildChemTile(
+                                      c as Map<String, dynamic>,
+                                      tileWidth,
+                                      context,
+                                      false,
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -2269,10 +2267,13 @@ class _HiveScreenState extends State<HiveScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final bool isWide = constraints.maxWidth > 800;
-        final bool isMedium = constraints.maxWidth > 500 && !isWide;
+        final double availableWidth = constraints.maxWidth > 1200
+            ? 1200
+            : constraints.maxWidth;
+        final bool isWide = availableWidth > 800;
+        final bool isMedium = availableWidth > 500 && !isWide;
         final double spacing = 16.0;
-        final double fullWidth = constraints.maxWidth - (spacing * 2);
+        final double fullWidth = availableWidth - (spacing * 2);
 
         final double tileWidth = isWide
             ? (fullWidth - (spacing * 2)) / 3
@@ -2283,23 +2284,28 @@ class _HiveScreenState extends State<HiveScreen> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  spacing: spacing,
-                  runSpacing: spacing,
-                  children: usersList
-                      .map(
-                        (u) => _buildUserTile(
-                          u as Map<String, dynamic>,
-                          tileWidth,
-                          context,
-                        ),
-                      )
-                      .toList(),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1200),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: usersList
+                          .map(
+                            (u) => _buildUserTile(
+                              u as Map<String, dynamic>,
+                              tileWidth,
+                              context,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -2389,7 +2395,7 @@ class _HiveScreenState extends State<HiveScreen> {
                 tooltip: 'Logout',
                 onPressed: () async {
                   HapticFeedback.heavyImpact();
-                  await attemptLogoutInIsolate();
+                  await AppApi.logout();
                   if (context.mounted) {
                     context.go('/login');
                   }
@@ -2413,26 +2419,40 @@ class _HiveScreenState extends State<HiveScreen> {
               : Container(
                   color: Theme.of(context).colorScheme.surfaceContainer,
                   child: SafeArea(
-                    child: TabBar(
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      labelPadding: const EdgeInsets.symmetric(vertical: 4.0),
-                      tabs: [
-                        const Tab(text: 'Info', icon: Icon(Icons.info_outline)),
-                        const Tab(
-                          text: 'Volks',
-                          icon: Icon(Icons.hive_outlined),
-                        ),
-                        const Tab(text: 'Log', icon: Icon(Icons.receipt_long)),
-                        const Tab(
-                          text: 'Chem',
-                          icon: Icon(Icons.science_outlined),
-                        ),
-                        if (isAdmin)
-                          const Tab(
-                            text: 'Perms',
-                            icon: Icon(Icons.admin_panel_settings),
+                    child: Center(
+                      heightFactor: 1.0,
+                      child: SizedBox(
+                        width: 800,
+                        child: TabBar(
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          labelPadding: const EdgeInsets.symmetric(
+                            vertical: 4.0,
                           ),
-                      ],
+                          tabs: [
+                            const Tab(
+                              text: 'Info',
+                              icon: Icon(Icons.info_outline),
+                            ),
+                            const Tab(
+                              text: 'Volks',
+                              icon: Icon(Icons.hive_outlined),
+                            ),
+                            const Tab(
+                              text: 'Log',
+                              icon: Icon(Icons.receipt_long),
+                            ),
+                            const Tab(
+                              text: 'Chem',
+                              icon: Icon(Icons.science_outlined),
+                            ),
+                            if (isAdmin)
+                              const Tab(
+                                text: 'Perms',
+                                icon: Icon(Icons.admin_panel_settings),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

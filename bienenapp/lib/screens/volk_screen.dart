@@ -1,83 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ffi/ffi.dart';
-import 'dart:ffi' as ffi;
 import 'dart:convert';
-import 'dart:isolate';
 import 'dart:async';
 
 import 'action_popups.dart';
-// Import your globally instantiated native backend
-import '../core/native_backend.dart';
-
-// Reuse native string helpers for logout functionality
-ffi.Pointer<ffi.Char> stringToNative(String str) {
-  final nativeStr = str.toNativeUtf8();
-  return nativeStr.cast<ffi.Char>();
-}
-
-String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  if (nativeStr == ffi.nullptr) return '';
-
-  int length = 0;
-  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
-  while ((uint8Pointer + length).value != 0) {
-    length++;
-  }
-  final bytes = uint8Pointer.asTypedList(length);
-  return utf8.decode(bytes, allowMalformed: true);
-}
-
-Future<String> attemptLogoutInIsolate() async {
-  return await Isolate.run(() {
-    final result = backend.logout();
-    return nativeToString(result);
-  });
-}
-
-Future<String> fetchHiveDetailsInIsolate(int id) async {
-  return await Isolate.run(() {
-    final result = backend.get_hive_details_json(id);
-    return nativeToString(result);
-  });
-}
-
-final _parseVarroaStatsFunc = dylib
-    .lookupFunction<
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>),
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>)
-    >('parse_varroa_statistics');
-
-Future<String> parseVarroaStatsInIsolate(String logsJson) async {
-  return await Isolate.run(() {
-    final nativeStr = stringToNative(logsJson);
-    final result = _parseVarroaStatsFunc(nativeStr);
-    return nativeToString(result);
-  });
-}
-
-final _calcCombHistoryFunc = dylib
-    .lookupFunction<
-      ffi.Pointer<ffi.Char> Function(
-        ffi.Pointer<ffi.Char>,
-        ffi.Int32,
-        ffi.Int32,
-      ),
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>, int, int)
-    >('calculate_comb_history');
-
-Future<String> calcCombHistoryInIsolate(
-  String logsJson,
-  int currentB,
-  int currentH,
-) async {
-  return await Isolate.run(() {
-    final nativeStr = stringToNative(logsJson);
-    final result = _calcCombHistoryFunc(nativeStr, currentB, currentH);
-    return nativeToString(result);
-  });
-}
+import '../core/api/api.dart';
 
 class _VarroaChartWidget extends StatefulWidget {
   final List<dynamic> varroaData;
@@ -1487,7 +1415,7 @@ class _VolkScreenState extends State<VolkScreen> {
     if (_volkLogs == null || _volkLogs!.isEmpty) return;
 
     final logsJson = jsonEncode(_volkLogs);
-    final statsJsonString = await parseVarroaStatsInIsolate(logsJson);
+    final statsJsonString = await AppApi.parseVarroaStatistics(logsJson);
 
     if (mounted) {
       setState(() {
@@ -1502,7 +1430,7 @@ class _VolkScreenState extends State<VolkScreen> {
 
   Future<void> _loadVolkDetails() async {
     final int hiveId = int.tryParse(widget.hiveId) ?? 0;
-    final jsonString = await fetchHiveDetailsInIsolate(hiveId);
+    final jsonString = await AppApi.getHiveDetailsJson(hiveId);
 
     Map<String, dynamic>? tempVolkDetails;
     List<dynamic>? tempVolkLogs;
@@ -1615,7 +1543,7 @@ class _VolkScreenState extends State<VolkScreen> {
       );
 
       final logsJson = jsonEncode(tempVolkLogs);
-      final historyJsonString = await calcCombHistoryInIsolate(
+      final historyJsonString = await AppApi.calculateCombHistory(
         logsJson,
         bCount,
         hCount,
@@ -1688,6 +1616,7 @@ class _VolkScreenState extends State<VolkScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 600),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -2253,8 +2182,11 @@ class _VolkScreenState extends State<VolkScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final double availableWidth = constraints.maxWidth > 800
+            ? 800
+            : constraints.maxWidth;
         final double spacing = 16.0;
-        final double fullWidth = constraints.maxWidth - (spacing * 2);
+        final double fullWidth = availableWidth - (spacing * 2);
 
         final double halfWidth = (fullWidth - spacing) / 2;
 
@@ -2321,133 +2253,139 @@ class _VolkScreenState extends State<VolkScreen> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                _buildInfoCard(
-                  title: 'Number',
-                  icon: Icons.numbers,
-                  width: fullWidth,
-                  onTap: () => _copyToClipboard('Number', valNummer),
-                  content: Text(
-                    valNummer,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Type',
-                  icon: Icons.category_outlined,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Type', valTyp),
-                  content: Text(
-                    valTyp,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Status',
-                  icon: Icons.info_outline,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Status', valActive),
-                  content: Row(
-                    children: [
-                      Icon(
-                        valActive == 'Active'
-                            ? Icons.check_circle_outline
-                            : Icons.cancel_outlined,
-                        color: valActive == 'Active'
-                            ? Colors.green.shade600
-                            : Colors.red.shade600,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        valActive,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: [
+                    _buildInfoCard(
+                      title: 'Number',
+                      icon: Icons.numbers,
+                      width: fullWidth,
+                      onTap: () => _copyToClipboard('Number', valNummer),
+                      content: Text(
+                        valNummer,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    ],
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Queen',
-                  icon: Icons.bug_report,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Queen', valKonigin),
-                  content: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
                     ),
-                    decoration: BoxDecoration(
-                      color: qColor,
-                      borderRadius: BorderRadius.circular(6),
-                      border: qColor == Colors.white
-                          ? Border.all(color: Colors.grey.shade300)
-                          : null,
-                    ),
-                    child: Text(
-                      qText,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: qTextColor,
+                    _buildInfoCard(
+                      title: 'Type',
+                      icon: Icons.category_outlined,
+                      width: halfWidth,
+                      onTap: () => _copyToClipboard('Type', valTyp),
+                      content: Text(
+                        valTyp,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Queen Year',
-                  icon: Icons.event,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Queen Year', valKoniginJahr),
-                  content: Text(
-                    valKoniginJahr,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Origin',
-                  icon: Icons.place_outlined,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Origin', valHerkunft),
-                  content: Text(
-                    valHerkunft,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Creation Date',
-                  icon: Icons.calendar_today_outlined,
-                  width: halfWidth,
-                  onTap: () => _copyToClipboard('Creation Date', valDatum),
-                  content: Text(
-                    valDatum,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                _buildInfoCard(
-                  title: 'Volk Configuration',
-                  icon: Icons.stacked_bar_chart,
-                  width: fullWidth,
-                  content: _buildGraphicalHive(
-                    valBrutwaben,
-                    valHonigwaben,
-                    valHonigraum,
-                  ),
-                ),
-                if (valKommentar.isNotEmpty)
-                  _buildInfoCard(
-                    title: 'Notes',
-                    icon: Icons.notes,
-                    width: fullWidth,
-                    onTap: () => _copyToClipboard('Notes', valKommentar),
-                    content: Text(
-                      valKommentar,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    _buildInfoCard(
+                      title: 'Status',
+                      icon: Icons.info_outline,
+                      width: halfWidth,
+                      onTap: () => _copyToClipboard('Status', valActive),
+                      content: Row(
+                        children: [
+                          Icon(
+                            valActive == 'Active'
+                                ? Icons.check_circle_outline
+                                : Icons.cancel_outlined,
+                            color: valActive == 'Active'
+                                ? Colors.green.shade600
+                                : Colors.red.shade600,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            valActive,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
+                    _buildInfoCard(
+                      title: 'Queen',
+                      icon: Icons.bug_report,
+                      width: halfWidth,
+                      onTap: () => _copyToClipboard('Queen', valKonigin),
+                      content: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: qColor,
+                          borderRadius: BorderRadius.circular(6),
+                          border: qColor == Colors.white
+                              ? Border.all(color: Colors.grey.shade300)
+                              : null,
+                        ),
+                        child: Text(
+                          qText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: qTextColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Queen Year',
+                      icon: Icons.event,
+                      width: halfWidth,
+                      onTap: () =>
+                          _copyToClipboard('Queen Year', valKoniginJahr),
+                      content: Text(
+                        valKoniginJahr,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Origin',
+                      icon: Icons.place_outlined,
+                      width: halfWidth,
+                      onTap: () => _copyToClipboard('Origin', valHerkunft),
+                      content: Text(
+                        valHerkunft,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Creation Date',
+                      icon: Icons.calendar_today_outlined,
+                      width: halfWidth,
+                      onTap: () => _copyToClipboard('Creation Date', valDatum),
+                      content: Text(
+                        valDatum,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    _buildInfoCard(
+                      title: 'Volk Configuration',
+                      icon: Icons.stacked_bar_chart,
+                      width: fullWidth,
+                      content: _buildGraphicalHive(
+                        valBrutwaben,
+                        valHonigwaben,
+                        valHonigraum,
+                      ),
+                    ),
+                    if (valKommentar.isNotEmpty)
+                      _buildInfoCard(
+                        title: 'Notes',
+                        icon: Icons.notes,
+                        width: fullWidth,
+                        onTap: () => _copyToClipboard('Notes', valKommentar),
+                        content: Text(
+                          valKommentar,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
@@ -3122,17 +3060,22 @@ class _VolkScreenState extends State<VolkScreen> {
   Widget _buildStatisticsTab() {
     return _ThemeRefreshIndicator(
       onRefresh: _loadVolkDetails,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          _VarroaChartWidget(
-            varroaData: _varroaStats ?? [],
-            volkLogs: _volkLogs ?? [],
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              _VarroaChartWidget(
+                varroaData: _varroaStats ?? [],
+                volkLogs: _volkLogs ?? [],
+              ),
+              const SizedBox(height: 16),
+              _CombHistoryChartWidget(volkLogs: _volkLogs ?? []),
+            ],
           ),
-          const SizedBox(height: 16),
-          _CombHistoryChartWidget(volkLogs: _volkLogs ?? []),
-        ],
+        ),
       ),
     );
   }
@@ -3208,7 +3151,7 @@ class _VolkScreenState extends State<VolkScreen> {
                 tooltip: 'Logout',
                 onPressed: () async {
                   HapticFeedback.heavyImpact();
-                  await attemptLogoutInIsolate();
+                  await AppApi.logout();
                   if (context.mounted) {
                     context.go('/login');
                   }
@@ -3237,15 +3180,21 @@ class _VolkScreenState extends State<VolkScreen> {
               : null,
           bottomNavigationBar: Container(
             color: Theme.of(context).colorScheme.surfaceContainer,
-            child: const SafeArea(
-              child: TabBar(
-                indicatorSize: TabBarIndicatorSize.tab,
-                labelPadding: EdgeInsets.symmetric(vertical: 4.0),
-                tabs: [
-                  Tab(text: 'Info', icon: Icon(Icons.info_outline)),
-                  Tab(text: 'Log', icon: Icon(Icons.receipt_long)),
-                  Tab(text: 'Statistics', icon: Icon(Icons.bar_chart)),
-                ],
+            child: SafeArea(
+              child: Center(
+                heightFactor: 1.0,
+                child: SizedBox(
+                  width: 800,
+                  child: const TabBar(
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    labelPadding: EdgeInsets.symmetric(vertical: 4.0),
+                    tabs: [
+                      Tab(text: 'Info', icon: Icon(Icons.info_outline)),
+                      Tab(text: 'Log', icon: Icon(Icons.receipt_long)),
+                      Tab(text: 'Statistics', icon: Icon(Icons.bar_chart)),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

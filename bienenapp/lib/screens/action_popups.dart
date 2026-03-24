@@ -1,55 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:ffi' as ffi;
 import 'dart:convert';
-import 'dart:isolate';
-import 'package:ffi/ffi.dart';
-import '../core/native_backend.dart';
-
-ffi.Pointer<ffi.Char> stringToNative(String str) {
-  final nativeStr = str.toNativeUtf8();
-  return nativeStr.cast<ffi.Char>();
-}
-
-String nativeToString(ffi.Pointer<ffi.Char> nativeStr) {
-  if (nativeStr == ffi.nullptr) return '';
-  int length = 0;
-  final uint8Pointer = nativeStr.cast<ffi.Uint8>();
-  while ((uint8Pointer + length).value != 0) {
-    length++;
-  }
-  final bytes = uint8Pointer.asTypedList(length);
-  return utf8.decode(bytes, allowMalformed: true);
-}
-
-final _submitActionFunc = dylib
-    .lookupFunction<
-      ffi.Pointer<ffi.Char> Function(
-        ffi.Int32,
-        ffi.Int32,
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-      ),
-      ffi.Pointer<ffi.Char> Function(
-        int,
-        int,
-        ffi.Pointer<ffi.Char>,
-        ffi.Pointer<ffi.Char>,
-      )
-    >('submit_action');
-
-Future<String> submitActionInIsolate(
-  int hiveId,
-  int volkId,
-  String action,
-  String dataJson,
-) async {
-  return await Isolate.run(() {
-    final cAction = stringToNative(action);
-    final cData = stringToNative(dataJson);
-    final result = _submitActionFunc(hiveId, volkId, cAction, cData);
-    return nativeToString(result);
-  });
-}
+import '../core/api/api.dart';
 
 Future<void> showActionPopup(
   BuildContext context,
@@ -62,6 +13,7 @@ Future<void> showActionPopup(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    constraints: const BoxConstraints(maxWidth: 600),
     backgroundColor: Theme.of(context).colorScheme.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -605,7 +557,7 @@ class _ActionFormWidgetState extends State<ActionFormWidget> {
       );
 
       final jsonStr = jsonEncode(_formData);
-      final result = await submitActionInIsolate(
+      final result = await AppApi.submitAction(
         widget.hiveId,
         widget.volkId,
         widget.actionKey,
